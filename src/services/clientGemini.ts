@@ -14,13 +14,10 @@ function getGeminiClient(): GoogleGenerativeAI | null {
   return new GoogleGenerativeAI(key.trim());
 }
 
-const MODELS_PRIORITY = [
-  'gemini-1.5-flash',
-  'gemini-flash-latest'
-];
+const PRIMARY_MODEL = 'gemini-1.5-flash';
 
 /**
- * Resilient helper that attempts calls across priority models and applies retries.
+ * Resilient helper that attempts calls with retries using gemini-1.5-flash.
  */
 async function callClientGeminiWithResilience(
   prompt: string,
@@ -32,39 +29,38 @@ async function callClientGeminiWithResilience(
     return null;
   }
 
-  for (const modelName of MODELS_PRIORITY) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          ...(systemInstruction ? { systemInstruction } : {})
-        });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: PRIMARY_MODEL,
+        ...(systemInstruction ? { systemInstruction } : {})
+      });
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-        if (text && text.trim().length > 0) {
-          return text.trim();
-        }
-      } catch (err: any) {
-        const errorMsg = err?.message || String(err);
-        const isTransient = 
-          errorMsg.includes('503') || 
-          errorMsg.includes('high demand') || 
-          errorMsg.includes('UNAVAILABLE') || 
-          errorMsg.includes('429') ||
-          errorMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isTransient && attempt === 1) {
-          await new Promise(resolve => setTimeout(resolve, 350 + Math.random() * 250));
-          continue;
-        }
-        break; // try next model
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      if (text && text.trim().length > 0) {
+        return text.trim();
       }
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      const isTransient = 
+        errorMsg.includes('503') || 
+        errorMsg.includes('high demand') || 
+        errorMsg.includes('UNAVAILABLE') || 
+        errorMsg.includes('429') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED');
+
+      if (isTransient && attempt === 1) {
+        await new Promise(resolve => setTimeout(resolve, 350 + Math.random() * 250));
+        continue;
+      }
+      console.warn(`[Client Gemini] Error calling ${PRIMARY_MODEL} for "${actionName}":`, errorMsg);
+      break;
     }
   }
 
-  console.warn(`[Client Gemini] Could not complete "${actionName}" via API. Falling back to local intelligence.`);
+  console.warn(`[Client Gemini] Could not complete "${actionName}" via API.`);
   return null;
 }
 
@@ -382,48 +378,46 @@ Guidelines for your responses:
   const formattedHistory = formatHistoryForGemini(history);
   let lastError: any = null;
 
-  for (const modelName of MODELS_PRIORITY) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          systemInstruction: systemInstruction,
-        });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: PRIMARY_MODEL,
+        systemInstruction: systemInstruction,
+      });
 
-        const chat = model.startChat({
-          history: formattedHistory,
-          generationConfig: {
-            temperature: 0.7,
-            topP: 0.95,
-          },
-        });
+      const chat = model.startChat({
+        history: formattedHistory,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+        },
+      });
 
-        const result = await chat.sendMessage(question.trim());
-        const response = await result.response;
-        const text = response.text();
-        if (text && text.trim().length > 0) {
-          return { answer: text.trim() };
-        }
-      } catch (err: any) {
-        lastError = err;
-        const errorMsg = err?.message || String(err);
-        const isTransient =
-          errorMsg.includes('503') ||
-          errorMsg.includes('high demand') ||
-          errorMsg.includes('UNAVAILABLE') ||
-          errorMsg.includes('429') ||
-          errorMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isTransient && attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 350 + Math.random() * 250));
-          continue;
-        }
-        break; // try next model
+      const result = await chat.sendMessage(question.trim());
+      const response = await result.response;
+      const text = response.text();
+      if (text && text.trim().length > 0) {
+        return { answer: text.trim() };
       }
+    } catch (err: any) {
+      lastError = err;
+      const errorMsg = err?.message || String(err);
+      const isTransient =
+        errorMsg.includes('503') ||
+        errorMsg.includes('high demand') ||
+        errorMsg.includes('UNAVAILABLE') ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED');
+
+      if (isTransient && attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 350 + Math.random() * 250));
+        continue;
+      }
+      break;
     }
   }
 
-  console.error('[Client Gemini] Multi-turn chat failed across models:', lastError);
+  console.error('[Client Gemini] Multi-turn chat failed for model:', PRIMARY_MODEL, lastError);
   throw new Error(
     lastError?.message || 'Failed to receive response from Gemini AI. Please verify your connection or try again.'
   );
