@@ -14,8 +14,13 @@ import {
   AlertCircle,
   MessageSquare,
   UserCheck,
+  UserPlus,
   Shield,
-  ArrowRight
+  ShieldAlert,
+  ShieldCheck,
+  Ban,
+  ArrowRight,
+  Unlock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -30,7 +35,8 @@ export const MentorProfileModal: React.FC = () => {
     closeMentorModal, 
     showToast,
     triggerRefresh,
-    setActiveTab 
+    setActiveTab,
+    openAuthModal
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'profile' | 'request'>('profile');
@@ -44,9 +50,25 @@ export const MentorProfileModal: React.FC = () => {
   // Status check
   const [existingRequest, setExistingRequest] = useState<MentorshipRequest | null>(null);
   const [existingConnection, setExistingConnection] = useState<MentorshipConnection | null>(null);
+  const [networkingStatus, setNetworkingStatus] = useState<'none' | 'pending' | 'connected'>('none');
+  const [isSendingNetwork, setIsSendingNetwork] = useState(false);
+
+  // Block/Unblock state
+  const [isUserBlocked, setIsUserBlocked] = useState(false);
+  const [isProcessingBlock, setIsProcessingBlock] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
 
   useEffect(() => {
-    if (!mentor || !currentUser) return;
+    if (!mentor) return;
+
+    if (!currentUser) {
+      setIsUserBlocked(false);
+      setExistingRequest(null);
+      setExistingConnection(null);
+      setNetworkingStatus('none');
+      setActiveSubTab('profile');
+      return;
+    }
 
     // Reset fields
     setRequestMessage(`Hello ${mentor.name}, I am a ${currentUser.title} at ${currentUser.organization || 'independent'}. I would value your guidance on ${mentor.mentoringAreas[0] || 'career development and milestone planning'}.`);
@@ -57,15 +79,21 @@ export const MentorProfileModal: React.FC = () => {
 
     const checkExisting = async () => {
       try {
-        const [reqs, conns] = await Promise.all([
+        const [reqs, conns, netStatus, blockedUsers] = await Promise.all([
           api.getRequests(currentUser.id),
-          api.getConnections(currentUser.id)
+          api.getConnections(currentUser.id),
+          api.getNetworkingStatus(currentUser.id, mentor.id),
+          api.getBlockedUsers(currentUser.id),
         ]);
 
         const req = reqs.find(r => r.mentorId === mentor.id && r.requesterId === currentUser.id && (r.status === 'pending' || r.status === 'accepted'));
-        const conn = conns.find(c => c.mentorId === mentor.id && c.studentId === currentUser.id && c.status === 'active');
+        const conn = conns.find(c => (c.mentorId === mentor.id || c.studentId === mentor.id) && c.status === 'active');
+        const isBlocked = blockedUsers.some(b => b.id === mentor.id) || (currentUser.blockedUserIds?.includes(mentor.id) ?? false);
+
         setExistingRequest(req || null);
         setExistingConnection(conn || null);
+        setNetworkingStatus(netStatus);
+        setIsUserBlocked(isBlocked);
       } catch (err) {
         console.error('Error checking mentor relationship:', err);
       }
@@ -79,6 +107,71 @@ export const MentorProfileModal: React.FC = () => {
   const isSelf = currentUser?.id === mentor.id;
   const isConnected = !!existingConnection;
   const isPending = existingRequest?.status === 'pending';
+
+  const handleSendNetworking = async () => {
+    if (!currentUser) {
+      openAuthModal('choice');
+      showToast('info', 'Sign In Required', 'Please sign in or create an account to connect with members.');
+      return;
+    }
+    if (isSelf || isUserBlocked) return;
+    try {
+      setIsSendingNetwork(true);
+      await api.sendNetworkingRequest({
+        requesterId: currentUser.id,
+        recipientId: mentor.id,
+      });
+      setNetworkingStatus('pending');
+      showToast('success', 'Connection Request Sent', `Sent a professional network request to ${mentor.name}.`);
+    } catch (err: any) {
+      showToast('error', 'Network Request Failed', err.message || 'Could not send request');
+    } finally {
+      setIsSendingNetwork(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (!currentUser) return;
+    try {
+      setIsProcessingBlock(true);
+      await api.unblockUser(mentor.id, currentUser.id);
+      setIsUserBlocked(false);
+      if (currentUser.blockedUserIds) {
+        currentUser.blockedUserIds = currentUser.blockedUserIds.filter(id => id !== mentor.id);
+      }
+      showToast('success', 'User Unblocked', `${mentor.name} has been unblocked. You can now connect.`);
+      triggerRefresh();
+    } catch (err: any) {
+      showToast('error', 'Failed to Unblock', err.message);
+    } finally {
+      setIsProcessingBlock(false);
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!currentUser) return;
+    try {
+      setIsProcessingBlock(true);
+      await api.blockUser(mentor.id, currentUser.id);
+      setIsUserBlocked(true);
+      if (!currentUser.blockedUserIds) {
+        currentUser.blockedUserIds = [];
+      }
+      if (!currentUser.blockedUserIds.includes(mentor.id)) {
+        currentUser.blockedUserIds.push(mentor.id);
+      }
+      setExistingConnection(null);
+      setExistingRequest(null);
+      setNetworkingStatus('none');
+      setShowBlockModal(false);
+      showToast('info', 'User Blocked', `${mentor.name} has been blocked and removed from your network.`);
+      triggerRefresh();
+    } catch (err: any) {
+      showToast('error', 'Failed to Block', err.message);
+    } finally {
+      setIsProcessingBlock(false);
+    }
+  };
 
   const handlePolishMessage = async () => {
     try {
@@ -103,6 +196,17 @@ export const MentorProfileModal: React.FC = () => {
     e.preventDefault();
     setErrorMessage('');
 
+    if (!currentUser) {
+      openAuthModal('choice');
+      showToast('info', 'Sign In Required', 'Please sign in or create an account to request mentorship.');
+      return;
+    }
+
+    if (currentUser.id === mentor.id) {
+      setErrorMessage('You cannot request mentorship with your own profile.');
+      return;
+    }
+
     if (!requestMessage.trim()) {
       setErrorMessage('Please include a message for the mentor.');
       return;
@@ -111,7 +215,15 @@ export const MentorProfileModal: React.FC = () => {
     try {
       setIsSubmitting(true);
       await api.createRequest({
+        requesterId: currentUser.id,
+        requesterName: currentUser.name,
+        requesterTitle: currentUser.title,
+        requesterAvatar: currentUser.avatar,
+        requesterRole: currentUser.role,
         mentorId: mentor.id,
+        mentorName: mentor.name,
+        mentorTitle: mentor.title,
+        mentorAvatar: mentor.avatar,
         message: requestMessage,
         goalsSummary: goalsSummary,
       });
@@ -134,12 +246,32 @@ export const MentorProfileModal: React.FC = () => {
       >
         {/* Modal Top Banner */}
         <div className="h-28 bg-gradient-to-r from-[#181B28] via-[#141622] to-[#1E2232] relative px-6 flex items-end justify-between pb-4 border-b border-[#232738]">
-          <button
-            onClick={closeMentorModal}
-            className="absolute top-4 right-4 p-2 rounded-lg bg-[#090A0F]/60 text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#1C2030] transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="absolute top-4 left-6 flex items-center space-x-2">
+            {isUserBlocked && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-mono uppercase font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                <Ban className="w-3 h-3 mr-1" /> Blocked User
+              </span>
+            )}
+          </div>
+          <div className="absolute top-4 right-4 flex items-center space-x-2">
+            {currentUser && !isSelf && !isUserBlocked && (
+              <button
+                type="button"
+                onClick={() => setShowBlockModal(true)}
+                className="px-2.5 py-1 rounded-lg bg-[#090A0F]/60 hover:bg-red-950/40 text-[#7A766E] hover:text-red-400 border border-transparent hover:border-red-800/40 text-[11px] font-mono transition-colors cursor-pointer flex items-center space-x-1"
+                title="Block this user"
+              >
+                <Ban className="w-3.5 h-3.5" />
+                <span>Block</span>
+              </button>
+            )}
+            <button
+              onClick={closeMentorModal}
+              className="p-2 rounded-lg bg-[#090A0F]/60 text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#1C2030] transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Profile Card Header Info */}
@@ -154,9 +286,27 @@ export const MentorProfileModal: React.FC = () => {
             <div className="mb-1">
               <div className="flex items-center space-x-2">
                 <h2 className="text-xl font-serif font-bold text-[#F5F2EB]">{mentor.name}</h2>
-                {mentor.verificationStatus === 'verified' && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
-                    <Shield className="w-3 h-3 mr-1" /> Verified Mentor
+                {mentor.role === 'mentor' ? (
+                  mentor.verificationStatus === 'verified' ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
+                      <Shield className="w-3 h-3 mr-1" /> Verified Mentor
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20">
+                      <Award className="w-3 h-3 mr-1" /> Industry Mentor
+                    </span>
+                  )
+                ) : mentor.role === 'early_career' ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <Briefcase className="w-3 h-3 mr-1" /> Early-Career
+                  </span>
+                ) : mentor.role === 'admin' ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                    <Shield className="w-3 h-3 mr-1" /> Administrator
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                    <GraduationCap className="w-3 h-3 mr-1" /> Learner
                   </span>
                 )}
               </div>
@@ -165,28 +315,102 @@ export const MentorProfileModal: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            {isConnected ? (
-              <span className="inline-flex items-center space-x-1 px-3.5 py-2 rounded-xl text-xs font-mono font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
-                <UserCheck className="w-4 h-4 mr-1" />
-                <span>Active Mentorship</span>
-              </span>
-            ) : isPending ? (
-              <span className="inline-flex items-center space-x-1 px-3.5 py-2 rounded-xl text-xs font-mono font-semibold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
-                <Clock className="w-4 h-4 mr-1" />
-                <span>Request Pending</span>
-              </span>
+          <div className="flex items-center flex-wrap gap-2">
+            {!currentUser ? (
+              /* Public / Unregistered Visitor Action Controls */
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => openAuthModal('signin')}
+                  className="px-3.5 py-2 bg-[#181B28] hover:bg-[#222738] text-[#F5F2EB] border border-[#343A52] hover:border-[#D4AF37] rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>Connect</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAuthModal('signup', mentor.role === 'mentor' ? 'student' : 'mentor')}
+                  className="px-4 py-2 bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-[#D4AF37]/15 transition-all cursor-pointer flex items-center space-x-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{mentor.role === 'mentor' ? 'Request Mentorship' : 'Start Guidance'}</span>
+                </button>
+              </div>
             ) : isSelf ? (
               <span className="text-xs text-[#7A766E] italic">Your Profile</span>
-            ) : (
+            ) : isUserBlocked ? (
+              /* Dynamic Unblock Button */
               <button
-                id="modal-request-mentorship-tab-btn"
-                onClick={() => setActiveSubTab(activeSubTab === 'request' ? 'profile' : 'request')}
-                className="px-5 py-2.5 bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-[#D4AF37]/15 transition-all cursor-pointer flex items-center space-x-1.5"
+                type="button"
+                onClick={handleUnblock}
+                disabled={isProcessingBlock}
+                className="px-4 py-2 bg-[#181B28] hover:bg-emerald-950/40 text-emerald-400 border border-emerald-700/50 hover:border-emerald-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>{activeSubTab === 'request' ? 'View Bio & Experience' : 'Request Mentorship'}</span>
+                <Unlock className="w-3.5 h-3.5" />
+                <span>{isProcessingBlock ? 'Unblocking...' : 'Unblock User'}</span>
               </button>
+            ) : (
+              <>
+                {/* 1. Independent Professional Network Action */}
+                {networkingStatus === 'connected' ? (
+                  <span className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl text-xs font-mono font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                    <UserCheck className="w-3.5 h-3.5 mr-1" />
+                    <span>In Network</span>
+                  </span>
+                ) : networkingStatus === 'pending' ? (
+                  <span className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl text-xs font-mono font-semibold bg-[#262A3C] text-[#C4C0B5] border border-[#343A52]">
+                    <Clock className="w-3.5 h-3.5 mr-1 text-[#D4AF37]" />
+                    <span>Network Pending</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSendNetworking}
+                    disabled={isSendingNetwork}
+                    className="px-3.5 py-2 bg-[#181B28] hover:bg-[#222738] text-[#F5F2EB] border border-[#343A52] hover:border-[#D4AF37] rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>{isSendingNetwork ? 'Connecting...' : 'Add to Network'}</span>
+                  </button>
+                )}
+
+                {/* 2. Independent Mentorship Action */}
+                {isConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMentorModal();
+                      setActiveTab('connections');
+                    }}
+                    className="inline-flex items-center space-x-1 px-3.5 py-2 rounded-xl text-xs font-mono font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 hover:bg-[#10B981]/25 transition-all cursor-pointer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                    <span>Open Workspace</span>
+                  </button>
+                ) : isPending ? (
+                  <span className="inline-flex items-center space-x-1 px-3.5 py-2 rounded-xl text-xs font-mono font-semibold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
+                    <Clock className="w-3.5 h-3.5 mr-1" />
+                    <span>Mentorship Pending</span>
+                  </span>
+                ) : (
+                  <button
+                    id="modal-request-mentorship-tab-btn"
+                    onClick={() => setActiveSubTab(activeSubTab === 'request' ? 'profile' : 'request')}
+                    className="px-4 py-2 bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-[#D4AF37]/15 transition-all cursor-pointer flex items-center space-x-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>
+                      {activeSubTab === 'request' 
+                        ? 'View Bio' 
+                        : mentor.role === 'mentor' 
+                          ? 'Request Mentorship' 
+                          : currentUser?.role === 'mentor'
+                            ? 'Guide / Mentor'
+                            : 'Request Mentorship'}
+                    </span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -339,6 +563,40 @@ export const MentorProfileModal: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Block Confirmation Modal */}
+      {showBlockModal && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#141622] border border-red-900/50 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl text-[#F5F2EB]">
+            <div className="w-12 h-12 rounded-xl bg-red-950/60 text-red-400 flex items-center justify-center border border-red-800/40">
+              <Ban className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-serif font-bold text-[#F5F2EB]">Block {mentor.name}?</h3>
+              <p className="text-xs text-[#9E9A90] mt-1 leading-relaxed">
+                Blocking this user will remove all active connections, requests, and network relationships. You can unblock them at any time from their profile.
+              </p>
+            </div>
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBlockModal(false)}
+                className="px-4 py-2 rounded-xl bg-[#181B28] text-[#9E9A90] hover:text-[#F5F2EB] border border-[#2D3349] text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBlock}
+                disabled={isProcessingBlock}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isProcessingBlock ? 'Blocking...' : 'Confirm Block'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

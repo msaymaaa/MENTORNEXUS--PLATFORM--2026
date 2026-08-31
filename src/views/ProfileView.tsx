@@ -14,15 +14,19 @@ import {
   Award,
   AlertCircle,
   Shield,
-  LogOut
+  LogOut,
+  Users,
+  ExternalLink,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
+import { UserProfile } from '../types/index';
 
 export const ProfileView: React.FC = () => {
   const { currentUser, updateCurrentUserProfile, logoutUser } = useAuth();
-  const { showToast, triggerRefresh, setActiveTab, openPersonaSwitcher } = useApp();
+  const { showToast, triggerRefresh, setActiveTab, openMentorModal, refreshTrigger } = useApp();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -41,6 +45,10 @@ export const ProfileView: React.FC = () => {
   const [achievements, setAchievements] = useState<string[]>([]);
   const [newAchievementInput, setNewAchievementInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Network state
+  const [networkMembers, setNetworkMembers] = useState<UserProfile[]>([]);
+  const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
 
   // Verification request modal state
   const [isRequestingVerification, setIsRequestingVerification] = useState(false);
@@ -61,7 +69,14 @@ export const ProfileView: React.FC = () => {
     setSkills(currentUser.skills || []);
     setMentoringAreas(currentUser.mentoringAreas || []);
     setAchievements(currentUser.achievements || []);
-  }, [currentUser]);
+
+    // Load real professional network
+    setIsLoadingNetwork(true);
+    api.getNetwork(currentUser.id)
+      .then(res => setNetworkMembers(res))
+      .catch(() => setNetworkMembers([]))
+      .finally(() => setIsLoadingNetwork(false));
+  }, [currentUser, refreshTrigger]);
 
   if (!currentUser) return null;
 
@@ -345,27 +360,109 @@ export const ProfileView: React.FC = () => {
 
       </form>
 
+      {/* Professional Network Section */}
+      <div className="bg-[#12141F] border border-[#262A3C] rounded-2xl p-6 sm:p-7 space-y-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232738] pb-4">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Users className="w-5 h-5 text-[#D4AF37]" />
+              <h3 className="text-base font-serif font-bold text-[#F5F2EB]">
+                Your Professional Network
+              </h3>
+            </div>
+            <p className="text-xs text-[#9E9A90] mt-1">
+              Active connections, mentors, mentees, and professional contacts linked with your account.
+            </p>
+          </div>
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#181B28] text-[#D4AF37] border border-[#262A3C] self-start sm:self-auto">
+            {networkMembers.length} {networkMembers.length === 1 ? 'Connection' : 'Connections'}
+          </span>
+        </div>
+
+        {isLoadingNetwork ? (
+          <div className="py-8 text-center text-xs text-[#7A766E] font-mono">
+            Loading your professional network...
+          </div>
+        ) : networkMembers.length === 0 ? (
+          <div className="py-8 text-center space-y-3 bg-[#0D0F18] border border-[#262A3C] rounded-xl p-6">
+            <Users className="w-8 h-8 text-[#5A564E] mx-auto" />
+            <p className="text-xs text-[#9E9A90]">
+              You have not connected with anyone yet. Explore the community directory to connect with industry practitioners.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('discover')}
+              className="px-4 py-2 bg-[#D4AF37] text-[#090A0F] font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-[#C5A028] transition-colors cursor-pointer"
+            >
+              Explore Directory
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {networkMembers.map((member) => (
+              <div
+                key={member.id}
+                className="bg-[#161925] border border-[#262A3C] hover:border-[#D4AF37]/50 rounded-xl p-4 flex flex-col justify-between transition-all space-y-3"
+              >
+                <div className="flex items-start space-x-3">
+                  <img
+                    src={member.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                    alt={member.name}
+                    className="w-11 h-11 rounded-xl object-cover border border-[#2D3349] shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-serif font-bold text-[#F5F2EB] truncate">
+                      {member.name}
+                    </h4>
+                    <p className="text-[11px] text-[#9E9A90] truncate">
+                      {member.title}
+                    </p>
+                    <p className="text-[10px] text-[#7A766E] font-mono truncate">
+                      {member.organization || member.industry}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 pt-2 border-t border-[#232738]/60">
+                  <button
+                    type="button"
+                    onClick={() => openMentorModal(member)}
+                    className="flex-1 py-1.5 px-2.5 rounded-lg bg-[#1D2132] hover:bg-[#282E44] text-[#F5F2EB] text-[11px] font-semibold flex items-center justify-center space-x-1 cursor-pointer transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3 text-[#D4AF37]" />
+                    <span>View Profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('connections');
+                    }}
+                    className="py-1.5 px-2.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] border border-[#D4AF37]/30 text-[11px] font-semibold flex items-center justify-center cursor-pointer transition-colors"
+                    title="Open chat workspace"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Account Session Management */}
       <div className="bg-[#12141F] border border-[#262A3C] rounded-2xl p-6 sm:p-7 space-y-4 shadow-xl">
         <h3 className="text-base font-serif font-bold text-[#F5F2EB] border-b border-[#232738] pb-3">
           Session & Account Actions
         </h3>
         <p className="text-xs text-[#9E9A90] leading-relaxed">
-          Manage your active login session or switch testing personas.
+          Manage your active login session or sign out securely.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button
             type="button"
-            onClick={openPersonaSwitcher}
-            className="px-5 py-2.5 rounded-xl bg-[#181B28] hover:bg-[#232738] text-[#F5F2EB] border border-[#343A52] text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center space-x-2"
-          >
-            <User className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span>Switch Persona / Testing Role</span>
-          </button>
-
-          <button
-            type="button"
+            id="profile-signout-btn"
             onClick={async () => {
               await logoutUser();
               setActiveTab('landing');

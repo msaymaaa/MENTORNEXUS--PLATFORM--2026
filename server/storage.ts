@@ -8,7 +8,9 @@ import {
   ExperienceResource, 
   AppNotification, 
   AdminStats,
-  UserRole 
+  UserRole,
+  ChatMessage,
+  MentorshipMeeting 
 } from '../src/types/index';
 
 interface DatabaseSchema {
@@ -18,354 +20,16 @@ interface DatabaseSchema {
   goals: Goal[];
   resources: ExperienceResource[];
   notifications: AppNotification[];
+  messages?: ChatMessage[];
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-const INITIAL_USERS: UserProfile[] = [
-  {
-    id: 'user_sarah_learner',
-    email: 'sarah.chen@university.edu',
-    name: 'Sarah Chen',
-    role: 'student',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-    title: 'CS Undergraduate Student',
-    organization: 'Stanford University',
-    bio: 'Junior Computer Science major passionate about AI, distributed systems, and modern web architectures. Seeking mentorship on transitioning to industry roles and preparing for technical interviews.',
-    industry: 'Technology & AI',
-    location: 'Palo Alto, CA',
-    yearsOfExperience: 1,
-    skills: ['Python', 'TypeScript', 'React', 'Data Structures', 'Machine Learning', 'Git'],
-    interests: ['Artificial Intelligence', 'Cloud Infrastructure', 'Tech Careers', 'Open Source'],
-    mentoringAreas: ['Software Engineering Careers', 'Resume & Interview Prep', 'Internship Strategies'],
-    education: 'B.S. Computer Science (Expected 2027)',
-    verificationStatus: 'verified',
-    createdAt: '2026-01-15T09:00:00.000Z',
-  },
-  {
-    id: 'user_alex_early',
-    email: 'alex.rivera@fintechstartup.io',
-    name: 'Alex Rivera',
-    role: 'early_career',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
-    title: 'Junior Software Engineer',
-    organization: 'FinFlow Technologies',
-    bio: 'Full-stack developer with 2 years of professional experience building React and Node.js microservices. Looking for guidance on system architecture, promotion to Senior Engineer, and technical leadership.',
-    industry: 'Financial Technology',
-    location: 'Austin, TX',
-    yearsOfExperience: 2,
-    skills: ['JavaScript', 'TypeScript', 'Node.js', 'React', 'PostgreSQL', 'Docker', 'REST APIs'],
-    interests: ['System Design', 'Fintech Architecture', 'Engineering Leadership', 'Clean Code'],
-    mentoringAreas: ['Mid-level Career Promotion', 'System Design', 'Backend Scalability'],
-    education: 'B.S. Software Engineering, UT Austin',
-    verificationStatus: 'verified',
-    createdAt: '2026-02-10T14:30:00.000Z',
-  },
-  {
-    id: 'user_marcus_mentor',
-    email: 'marcus.vance@techgiant.com',
-    name: 'Dr. Marcus Vance',
-    role: 'mentor',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80',
-    title: 'Staff AI & Systems Architect',
-    organization: 'Apex AI Research / Former Google',
-    bio: '14+ years designing high-scale distributed systems and LLM inference pipelines. Passionate about empowering aspiring software engineers, research scientists, and diverse talent in technology.',
-    industry: 'Artificial Intelligence & Cloud',
-    location: 'San Francisco, CA',
-    yearsOfExperience: 14,
-    skills: ['Distributed Systems', 'Python', 'Go', 'PyTorch', 'System Architecture', 'Cloud Infrastructure', 'Tech Leadership'],
-    interests: ['Generative AI', 'High Performance Computing', 'Mentorship Ethics', 'Open Source'],
-    mentoringAreas: ['AI & ML Career Roadmaps', 'Senior / Staff Engineering Transition', 'System Design at Scale', 'Engineering Leadership'],
-    education: 'Ph.D. in Computer Science, Carnegie Mellon University',
-    achievements: ['Published 12 IEEE/ACM papers on distributed systems', 'Mentored 35+ engineers into Senior/Staff roles', 'Top Mentor Award 2025'],
-    availability: '2 hrs / week (Bi-weekly 1:1 sessions)',
-    verificationStatus: 'verified',
-    rating: 4.96,
-    reviewCount: 42,
-    createdAt: '2025-08-01T10:00:00.000Z',
-  },
-  {
-    id: 'user_elena_mentor',
-    email: 'elena.rostova@productforge.com',
-    name: 'Elena Rostova',
-    role: 'mentor',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
-    title: 'VP of Product Management',
-    organization: 'CloudScale SaaS',
-    bio: 'Product executive with 11+ years leading multi-disciplinary product, design, and growth teams across Series A through IPO stages. Helping product managers hone strategic vision and executive communication.',
-    industry: 'Product Management & SaaS',
-    location: 'New York, NY',
-    yearsOfExperience: 11,
-    skills: ['Product Strategy', 'Roadmapping', 'User Research', 'Product-Led Growth', 'Cross-functional Leadership', 'Data Analytics'],
-    interests: ['Product Ops', 'SaaS Metrics', 'Executive Mentoring', 'Inclusive Leadership'],
-    mentoringAreas: ['Breaking into Product Management', 'Executive Presence & Stakeholder Management', 'Scaling SaaS Products', 'Product Strategy Frameworks'],
-    education: 'MBA, Harvard Business School',
-    achievements: ['Led 3 products from $0 to $40M+ ARR', 'Keynote Speaker at ProductCon 2025', 'Author of "The Pragmatic PM"'],
-    availability: '3 slots open (Monthly strategic reviews)',
-    verificationStatus: 'verified',
-    rating: 4.92,
-    reviewCount: 29,
-    createdAt: '2025-09-12T11:20:00.000Z',
-  },
-  {
-    id: 'user_david_mentor',
-    email: 'david.kim@devopsglobal.net',
-    name: 'David Kim',
-    role: 'mentor',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=300&auto=format&fit=crop&q=80',
-    title: 'Director of Cloud Engineering & DevOps',
-    organization: 'NextGen Infrastructure',
-    bio: 'Helping engineers navigate modern DevOps, Kubernetes ecosystem, Site Reliability Engineering (SRE), and multi-cloud security.',
-    industry: 'Cloud Engineering & DevOps',
-    location: 'Seattle, WA',
-    yearsOfExperience: 12,
-    skills: ['Kubernetes', 'AWS', 'GCP', 'Terraform', 'CI/CD', 'Observability', 'Linux Kernel'],
-    interests: ['Zero Trust Security', 'GitOps', 'Platform Engineering'],
-    mentoringAreas: ['DevOps & Cloud Specialization', 'SRE Best Practices', 'Infrastructure as Code Mastery'],
-    education: 'B.S. Electrical & Computer Engineering, University of Washington',
-    achievements: ['Built multi-region Kubernetes clusters handling 50M daily requests', 'Certified Kubernetes Administrator (CKA) trainer'],
-    availability: '1.5 hrs / week',
-    verificationStatus: 'verified',
-    rating: 4.88,
-    reviewCount: 18,
-    createdAt: '2025-10-05T08:15:00.000Z',
-  },
-  {
-    id: 'user_aisha_mentor',
-    email: 'aisha.patel@designstudio.co',
-    name: 'Aisha Patel',
-    role: 'mentor',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=300&auto=format&fit=crop&q=80',
-    title: 'Principal Product Designer & UX Lead',
-    organization: 'Starlight Design Labs',
-    bio: 'Dedicated to helping aspiring and mid-level designers build rock-solid UX research portfolios, master design systems, and articulate design decisions to engineers and stakeholders.',
-    industry: 'UI/UX & Product Design',
-    location: 'Chicago, IL',
-    yearsOfExperience: 9,
-    skills: ['Design Systems', 'Figma', 'User Research', 'Information Architecture', 'Prototyping', 'Accessibility (WCAG)'],
-    interests: ['Ethical Design', 'Design Thinking Workshops', 'Accessibility'],
-    mentoringAreas: ['Design Portfolio Reviews', 'Transitioning to Senior Designer', 'Mastering Design Systems', 'UX Interview Prep'],
-    education: 'B.F.A. Interactive Design, Rhode Island School of Design (RISD)',
-    achievements: ['Redesigned flagship healthcare mobile app used by 4M users', 'Design System Lead of the Year 2024'],
-    availability: '2 slots open (Flexible weekday evenings)',
-    verificationStatus: 'verified',
-    rating: 4.95,
-    reviewCount: 31,
-    createdAt: '2025-11-20T16:40:00.000Z',
-  },
-  {
-    id: 'user_carlos_mentor_pending',
-    email: 'carlos.mendoza@cyberguard.org',
-    name: 'Carlos Mendoza',
-    role: 'mentor',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=300&auto=format&fit=crop&q=80',
-    title: 'Lead Cybersecurity Architect',
-    organization: 'Sentinel Security Group',
-    bio: 'Specialist in threat modeling, application security, and penetration testing. Applying to join MentorNexus mentor council to guide students in cybersecurity careers.',
-    industry: 'Cybersecurity & Infosec',
-    location: 'Denver, CO',
-    yearsOfExperience: 8,
-    skills: ['Cybersecurity', 'AppSec', 'Threat Modeling', 'Network Security', 'Cryptography', 'Python'],
-    interests: ['Zero Trust', 'Cloud Security', 'InfoSec Mentorship'],
-    mentoringAreas: ['Cybersecurity Certifications (CISSP/OSCP)', 'Offensive & Defensive Security', 'SOC Career Paths'],
-    education: 'M.S. Information Security, Johns Hopkins',
-    achievements: ['Discovered 4 critical CVEs in enterprise protocols'],
-    availability: '1 hr / week',
-    verificationStatus: 'pending',
-    verificationNotes: 'Submitted credentials: CISSP certification #489211 and employer endorsement letter.',
-    createdAt: '2026-03-01T12:00:00.000Z',
-  },
-  {
-    id: 'user_admin_jordan',
-    email: 'admin.jordan@mentornexus.internal',
-    name: 'Jordan Hayes',
-    role: 'admin',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',
-    title: 'Platform Director & Community Lead',
-    organization: 'MentorNexus Global',
-    bio: 'MentorNexus system administrator ensuring community safety, mentor verification standards, quality content moderation, and high-impact mentorship pairings.',
-    industry: 'Platform Administration & Education',
-    location: 'San Francisco, CA',
-    yearsOfExperience: 10,
-    skills: ['Community Safety', 'Program Management', 'Mentorship Research', 'Policy Moderation', 'Data Analytics'],
-    interests: ['Educational Equity', 'Mentorship Science', 'Community Building'],
-    mentoringAreas: ['Community Programs'],
-    verificationStatus: 'verified',
-    createdAt: '2025-06-01T00:00:00.000Z',
-  }
-];
-
-const INITIAL_REQUESTS: MentorshipRequest[] = [
-  {
-    id: 'req_001',
-    requesterId: 'user_sarah_learner',
-    requesterName: 'Sarah Chen',
-    requesterTitle: 'CS Undergraduate Student',
-    requesterAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-    requesterRole: 'student',
-    mentorId: 'user_marcus_mentor',
-    mentorName: 'Dr. Marcus Vance',
-    mentorTitle: 'Staff AI & Systems Architect',
-    mentorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80',
-    status: 'accepted',
-    message: 'Hello Dr. Vance! I have been following your open source work on distributed execution engines. I am preparing for AI infrastructure internship interviews and would be incredibly grateful for your mentorship on systems design and career roadmapping.',
-    goalsSummary: 'Master distributed systems fundamentals and land a high-impact AI engineering internship.',
-    responseNote: 'Welcome Sarah! Impressed by your GitHub projects. Looking forward to our mentorship journey.',
-    createdAt: '2026-02-18T10:15:00.000Z',
-    updatedAt: '2026-02-19T14:20:00.000Z',
-  },
-  {
-    id: 'req_002',
-    requesterId: 'user_alex_early',
-    requesterName: 'Alex Rivera',
-    requesterTitle: 'Junior Software Engineer',
-    requesterAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
-    requesterRole: 'early_career',
-    mentorId: 'user_marcus_mentor',
-    mentorName: 'Dr. Marcus Vance',
-    mentorTitle: 'Staff AI & Systems Architect',
-    mentorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80',
-    status: 'pending',
-    message: 'Hi Marcus, I am currently a junior engineer at FinFlow building fintech microservices. I am aiming for promotion to Mid/Senior engineer this cycle and would value your guidance on designing fault-tolerant architectures and communicating system proposals to leadership.',
-    goalsSummary: 'Level up system design skills and earn senior promotion.',
-    createdAt: '2026-03-01T15:40:00.000Z',
-    updatedAt: '2026-03-01T15:40:00.000Z',
-  },
-  {
-    id: 'req_003',
-    requesterId: 'user_sarah_learner',
-    requesterName: 'Sarah Chen',
-    requesterTitle: 'CS Undergraduate Student',
-    requesterAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-    requesterRole: 'student',
-    mentorId: 'user_elena_mentor',
-    mentorName: 'Elena Rostova',
-    mentorTitle: 'VP of Product Management',
-    mentorAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
-    status: 'pending',
-    message: 'Dear Elena, I am exploring Associate Product Manager (APM) programs alongside software engineering. Your experience building $0 to $40M products is inspiring! Could we connect for guidance on evaluating tech vs. product paths?',
-    goalsSummary: 'Evaluate APM vs SWE career paths and prepare APM case interviews.',
-    createdAt: '2026-03-02T09:10:00.000Z',
-    updatedAt: '2026-03-02T09:10:00.000Z',
-  },
-  {
-    id: 'req_004',
-    requesterId: 'user_alex_early',
-    requesterName: 'Alex Rivera',
-    requesterTitle: 'Junior Software Engineer',
-    requesterAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
-    requesterRole: 'early_career',
-    mentorId: 'user_david_mentor',
-    mentorName: 'David Kim',
-    mentorTitle: 'Director of Cloud Engineering & DevOps',
-    mentorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=300&auto=format&fit=crop&q=80',
-    status: 'accepted',
-    message: 'Hi David! I want to master Docker and Kubernetes infrastructure for our backend services. Would love your mentorship on building production-ready CI/CD pipelines.',
-    goalsSummary: 'Achieve CKA certification and migrate legacy services to Kubernetes.',
-    responseNote: 'Great goal Alex! Let us set up our first bi-weekly sync to review your architecture diagrams.',
-    createdAt: '2026-02-10T11:00:00.000Z',
-    updatedAt: '2026-02-11T13:30:00.000Z',
-  }
-];
-
-const INITIAL_CONNECTIONS: MentorshipConnection[] = [
-  {
-    id: 'conn_001',
-    requestId: 'req_001',
-    studentId: 'user_sarah_learner',
-    studentName: 'Sarah Chen',
-    studentAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-    studentTitle: 'CS Undergraduate Student',
-    mentorId: 'user_marcus_mentor',
-    mentorName: 'Dr. Marcus Vance',
-    mentorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80',
-    mentorTitle: 'Staff AI & Systems Architect',
-    focusAreas: ['Distributed Systems Architecture', 'Technical Interview Mastery', 'AI Model Deployment'],
-    connectedAt: '2026-02-19T14:20:00.000Z',
-    lastInteractionAt: '2026-03-01T18:00:00.000Z',
-    status: 'active',
-    notes: ['Bi-weekly sync on Thursdays at 4:30 PM PST. Reviewing distributed consensus protocols (Raft/Paxos) and mock interview questions.']
-  },
-  {
-    id: 'conn_002',
-    requestId: 'req_004',
-    studentId: 'user_alex_early',
-    studentName: 'Alex Rivera',
-    studentAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
-    studentTitle: 'Junior Software Engineer',
-    mentorId: 'user_david_mentor',
-    mentorName: 'David Kim',
-    mentorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=300&auto=format&fit=crop&q=80',
-    mentorTitle: 'Director of Cloud Engineering & DevOps',
-    focusAreas: ['Kubernetes Deployment', 'CI/CD Automation', 'Cloud Security'],
-    connectedAt: '2026-02-11T13:30:00.000Z',
-    lastInteractionAt: '2026-02-28T16:00:00.000Z',
-    status: 'active',
-    notes: ['Monthly deep-dives on Terraform state management and production Kubernetes cluster monitoring with Prometheus/Grafana.']
-  }
-];
-
-const INITIAL_GOALS: Goal[] = [
-  {
-    id: 'goal_001',
-    userId: 'user_sarah_learner',
-    title: 'Crack Tier-1 Tech Summer Internship Interviews',
-    description: 'Prepare systematically for coding challenges, systems design basics, and behavioral interviews for summer software engineering roles.',
-    category: 'Interview Prep',
-    targetDate: '2026-05-15',
-    progress: 70,
-    status: 'in_progress',
-    mentorId: 'user_marcus_mentor',
-    milestones: [
-      { id: 'm1', title: 'Complete 75 LeetCode medium problems on Trees, Graphs, and DP', completed: true, dueDate: '2026-02-28' },
-      { id: 'm2', title: 'Conduct 3 mock technical interviews with Dr. Marcus Vance', completed: true, dueDate: '2026-03-15' },
-      { id: 'm3', title: 'Build a distributed key-value store portfolio project in Go/Rust', completed: true, dueDate: '2026-04-01' },
-      { id: 'm4', title: 'Polish resume and receive mentor sign-off', completed: false, dueDate: '2026-04-20' },
-      { id: 'm5', title: 'Submit 15 targeted internship applications with tailored cover letters', completed: false, dueDate: '2026-05-10' }
-    ],
-    createdAt: '2026-01-20T10:00:00.000Z',
-    updatedAt: '2026-03-01T18:30:00.000Z',
-  },
-  {
-    id: 'goal_002',
-    userId: 'user_sarah_learner',
-    title: 'Publish an Open Source LLM Evaluation Benchmark',
-    description: 'Design and open-source a lightweight Python library for benchmarking LLM latency and streaming throughput.',
-    category: 'Technical Skills',
-    targetDate: '2026-06-30',
-    progress: 35,
-    status: 'in_progress',
-    mentorId: 'user_marcus_mentor',
-    milestones: [
-      { id: 'm201', title: 'Draft technical spec & architecture diagram', completed: true, dueDate: '2026-02-15' },
-      { id: 'm202', title: 'Implement async batching engine with pytest test suite (90%+ coverage)', completed: false, dueDate: '2026-04-15' },
-      { id: 'm203', title: 'Write comprehensive documentation and interactive Colab demo', completed: false, dueDate: '2026-05-30' },
-      { id: 'm204', title: 'Publish on PyPI and launch on Hacker News / GitHub Trending', completed: false, dueDate: '2026-06-25' }
-    ],
-    createdAt: '2026-02-01T12:00:00.000Z',
-    updatedAt: '2026-02-25T15:00:00.000Z',
-  },
-  {
-    id: 'goal_003',
-    userId: 'user_alex_early',
-    title: 'Promotion to Mid-Level / Senior Software Engineer',
-    description: 'Demonstrate system ownership, mentor junior developers, and lead the architecture migration for FinFlow payment ingestion engine.',
-    category: 'Career Growth',
-    targetDate: '2026-08-30',
-    progress: 50,
-    status: 'in_progress',
-    mentorId: 'user_david_mentor',
-    milestones: [
-      { id: 'm301', title: 'Author RFC for high-throughput payment webhook processing', completed: true, dueDate: '2026-02-20' },
-      { id: 'm302', title: 'Present RFC to Engineering Architecture Review Committee', completed: true, dueDate: '2026-03-05' },
-      { id: 'm303', title: 'Successfully rollout service with zero downtime (<50ms p99 latency)', completed: false, dueDate: '2026-06-01' },
-      { id: 'm304', title: 'Complete self-evaluation and compile mentor feedback portfolio', completed: false, dueDate: '2026-08-01' }
-    ],
-    createdAt: '2026-02-12T14:00:00.000Z',
-    updatedAt: '2026-03-02T10:00:00.000Z',
-  }
-];
+const INITIAL_USERS: UserProfile[] = [];
+const INITIAL_REQUESTS: MentorshipRequest[] = [];
+const INITIAL_CONNECTIONS: MentorshipConnection[] = [];
+const INITIAL_GOALS: Goal[] = [];
 
 const INITIAL_RESOURCES: ExperienceResource[] = [
   {
@@ -466,52 +130,7 @@ Hiring managers want to see how you think under real-world constraints, not hypo
   }
 ];
 
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif_001',
-    userId: 'user_sarah_learner',
-    title: 'Mentorship Request Accepted!',
-    message: 'Dr. Marcus Vance accepted your mentorship request. You are now officially connected in MentorNexus!',
-    type: 'request_accepted',
-    read: false,
-    linkTab: 'connections',
-    linkId: 'conn_001',
-    createdAt: '2026-02-19T14:20:00.000Z',
-  },
-  {
-    id: 'notif_002',
-    userId: 'user_marcus_mentor',
-    title: 'New Mentorship Request',
-    message: 'Alex Rivera sent you a mentorship request for guidance on system design and senior promotion.',
-    type: 'request_received',
-    read: false,
-    linkTab: 'requests',
-    linkId: 'req_002',
-    createdAt: '2026-03-01T15:40:00.000Z',
-  },
-  {
-    id: 'notif_003',
-    userId: 'user_sarah_learner',
-    title: 'Milestone Completed!',
-    message: 'Awesome progress! You completed milestone "Complete 75 LeetCode medium problems" on your Interview Prep goal.',
-    type: 'goal_milestone',
-    read: true,
-    linkTab: 'goals',
-    linkId: 'goal_001',
-    createdAt: '2026-02-28T19:00:00.000Z',
-  },
-  {
-    id: 'notif_004',
-    userId: 'user_admin_jordan',
-    title: 'Pending Mentor Verification',
-    message: 'Carlos Mendoza submitted credentials for verification as a Cybersecurity Mentor.',
-    type: 'verification',
-    read: false,
-    linkTab: 'admin',
-    linkId: 'user_carlos_mentor_pending',
-    createdAt: '2026-03-01T12:05:00.000Z',
-  }
-];
+const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 class StorageEngine {
   private data: DatabaseSchema;
@@ -521,6 +140,12 @@ class StorageEngine {
   }
 
   private loadDatabase(): DatabaseSchema {
+    const MOCK_ID_PREFIXES = [
+      'user_sarah', 'user_alex', 'user_marcus', 'user_elena', 
+      'user_david', 'user_aisha', 'user_carlos', 'user_admin'
+    ];
+    const isMockUser = (id?: string) => !id || MOCK_ID_PREFIXES.some(prefix => id.startsWith(prefix));
+
     try {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -530,6 +155,13 @@ class StorageEngine {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         if (parsed.users && parsed.requests && parsed.connections && parsed.goals) {
+          // Sanitize out any legacy mock data
+          parsed.users = (parsed.users as UserProfile[]).filter(u => !isMockUser(u.id));
+          parsed.requests = (parsed.requests as MentorshipRequest[]).filter(r => !isMockUser(r.requesterId) && !isMockUser(r.mentorId));
+          parsed.connections = (parsed.connections as MentorshipConnection[]).filter(c => !isMockUser(c.studentId) && !isMockUser(c.mentorId));
+          parsed.goals = (parsed.goals as Goal[]).filter(g => !isMockUser(g.userId));
+          parsed.notifications = (parsed.notifications || []).filter((n: AppNotification) => !isMockUser(n.userId));
+          parsed.messages = parsed.messages || [];
           return parsed;
         }
       }
@@ -544,6 +176,7 @@ class StorageEngine {
       goals: INITIAL_GOALS,
       resources: INITIAL_RESOURCES,
       notifications: INITIAL_NOTIFICATIONS,
+      messages: [],
     };
 
     this.persist(initialData);
@@ -692,16 +325,343 @@ class StorageEngine {
 
   // Connections
   getConnections(userId?: string): MentorshipConnection[] {
+    if (!this.data.connections) this.data.connections = [];
     if (!userId) return this.data.connections;
     return this.data.connections.filter(c => c.studentId === userId || c.mentorId === userId);
   }
 
+  getConnectionById(id: string): MentorshipConnection | undefined {
+    if (!this.data.connections) this.data.connections = [];
+    if (!id) return undefined;
+    const cleanId = String(id).trim();
+    const rawId = cleanId.startsWith('conn_') ? cleanId.replace('conn_', '') : cleanId;
+    const prefixedId = cleanId.startsWith('conn_') ? cleanId : `conn_${cleanId}`;
+
+    return this.data.connections.find(c => {
+      const cId = String(c.id || '');
+      const cReqId = String(c.requestId || '');
+      return (
+        cId === cleanId ||
+        cId === rawId ||
+        cId === prefixedId ||
+        cReqId === cleanId ||
+        cReqId === rawId ||
+        cReqId === prefixedId ||
+        `conn_${cReqId}` === cleanId ||
+        `conn_${cReqId}` === prefixedId ||
+        cId.replace('conn_', '') === rawId
+      );
+    });
+  }
+
+  createConnection(conn: MentorshipConnection): MentorshipConnection {
+    if (!this.data.connections) this.data.connections = [];
+    const existingIdx = this.data.connections.findIndex(c => 
+      c.id === conn.id || 
+      (c.requestId && conn.requestId && c.requestId === conn.requestId) ||
+      (c.studentId === conn.studentId && c.mentorId === conn.mentorId) ||
+      (c.studentId === conn.mentorId && c.mentorId === conn.studentId)
+    );
+    if (existingIdx !== -1) {
+      const existing = this.data.connections[existingIdx];
+      const mergedMeetings = [...(conn.meetings || [])];
+      // Merge in existing meetings by id if not in incoming
+      (existing.meetings || []).forEach(em => {
+        if (!mergedMeetings.some(m => m.id === em.id)) {
+          mergedMeetings.push(em);
+        }
+      });
+
+      this.data.connections[existingIdx] = { 
+        ...existing, 
+        ...conn,
+        meetings: mergedMeetings,
+        nextMeetingDate: conn.nextMeetingDate || existing.nextMeetingDate,
+      };
+      this.persist();
+      return this.data.connections[existingIdx];
+    }
+    this.data.connections.unshift(conn);
+    this.persist();
+    return conn;
+  }
+
   updateConnection(id: string, updates: Partial<MentorshipConnection>): MentorshipConnection | null {
-    const idx = this.data.connections.findIndex(c => c.id === id);
-    if (idx === -1) return null;
-    this.data.connections[idx] = { ...this.data.connections[idx], ...updates };
+    if (!this.data.connections) this.data.connections = [];
+    const cleanId = String(id).trim();
+    const rawId = cleanId.startsWith('conn_') ? cleanId.replace('conn_', '') : cleanId;
+    const prefixedId = cleanId.startsWith('conn_') ? cleanId : `conn_${cleanId}`;
+
+    let idx = this.data.connections.findIndex(c => {
+      const cId = String(c.id || '');
+      const cReqId = String(c.requestId || '');
+      return (
+        cId === cleanId ||
+        cId === rawId ||
+        cId === prefixedId ||
+        cReqId === cleanId ||
+        cReqId === rawId ||
+        cReqId === prefixedId ||
+        `conn_${cReqId}` === cleanId ||
+        `conn_${cReqId}` === prefixedId ||
+        cId.replace('conn_', '') === rawId
+      );
+    });
+
+    if (idx === -1) {
+      // Create new entry if not yet in storage
+      const newConn: MentorshipConnection = {
+        id: cleanId,
+        requestId: updates.requestId || rawId,
+        studentId: updates.studentId || '',
+        studentName: updates.studentName || 'Learner',
+        studentAvatar: updates.studentAvatar || '',
+        studentTitle: updates.studentTitle || '',
+        mentorId: updates.mentorId || '',
+        mentorName: updates.mentorName || 'Mentor',
+        mentorAvatar: updates.mentorAvatar || '',
+        mentorTitle: updates.mentorTitle || '',
+        focusAreas: updates.focusAreas || ['Career Growth'],
+        status: updates.status || 'active',
+        notes: updates.notes || [],
+        meetings: updates.meetings || [],
+        lastMeetingDate: updates.lastMeetingDate,
+        nextMeetingDate: updates.nextMeetingDate,
+        connectedAt: updates.connectedAt || new Date().toISOString(),
+      };
+      this.data.connections.unshift(newConn);
+      this.persist();
+      return newConn;
+    }
+    
+    // Merge meetings safely preserving all scheduled & past meetings
+    const existingMeetings = this.data.connections[idx].meetings || [];
+    let mergedMeetings = existingMeetings;
+    if (updates.meetings !== undefined) {
+      const meetingMap = new Map<string, MentorshipMeeting>();
+      existingMeetings.forEach(m => meetingMap.set(m.id, m));
+      updates.meetings.forEach(m => meetingMap.set(m.id, m));
+      mergedMeetings = Array.from(meetingMap.values());
+    }
+
+    this.data.connections[idx] = { 
+      ...this.data.connections[idx], 
+      ...updates,
+      meetings: mergedMeetings,
+      nextMeetingDate: updates.nextMeetingDate || this.data.connections[idx].nextMeetingDate,
+    };
     this.persist();
     return this.data.connections[idx];
+  }
+
+  deleteConnection(id: string, callerId?: string, peerUserId?: string): boolean {
+    if (!this.data.connections) this.data.connections = [];
+    const cleanId = String(id || '').trim();
+    const rawId = cleanId.replace('conn_', '').replace('net_', '');
+
+    // 1. Locate connection to discover user IDs if not explicitly passed
+    const matched = this.data.connections.find(c => {
+      const cId = String(c.id || '');
+      const cReqId = String(c.requestId || '');
+      return (
+        cId === cleanId || cId === rawId || cId === `conn_${cleanId}` || cId === `conn_${rawId}` ||
+        cReqId === cleanId || cReqId === rawId || cReqId === `conn_${rawId}`
+      );
+    });
+
+    const userA = callerId || matched?.studentId;
+    const userB = peerUserId || matched?.mentorId;
+
+    // 2. Filter out connection records
+    this.data.connections = this.data.connections.filter(c => {
+      const cId = String(c.id || '');
+      const cReqId = String(c.requestId || '');
+      const matchId = cId === cleanId || cId === rawId || cId === `conn_${cleanId}` || cId === `conn_${rawId}` ||
+                      cReqId === cleanId || cReqId === rawId || cReqId === `conn_${rawId}`;
+      const matchUsers = Boolean(userA && userB && (
+        (c.studentId === userA && c.mentorId === userB) ||
+        (c.studentId === userB && c.mentorId === userA)
+      ));
+      return !(matchId || matchUsers);
+    });
+
+    // 3. Filter out / update any associated mentorship requests
+    if (this.data.requests) {
+      this.data.requests = this.data.requests.filter(r => {
+        const matchId = r.id === rawId || r.id === cleanId || r.id === `req_${rawId}`;
+        const matchUsers = Boolean(userA && userB && (
+          (r.requesterId === userA && r.mentorId === userB) ||
+          (r.requesterId === userB && r.mentorId === userA)
+        ));
+        return !(matchId || matchUsers);
+      });
+    }
+
+    // 4. Remove from network lists
+    if (userA && userB) {
+      const userAObj = this.data.users.find(u => u.id === userA);
+      if (userAObj && userAObj.networkIds) {
+        userAObj.networkIds = userAObj.networkIds.filter(nid => nid !== userB);
+      }
+      const userBObj = this.data.users.find(u => u.id === userB);
+      if (userBObj && userBObj.networkIds) {
+        userBObj.networkIds = userBObj.networkIds.filter(nid => nid !== userA);
+      }
+    }
+
+    this.persist();
+    return true;
+  }
+
+  blockUser(userId: string, targetUserId: string): boolean {
+    if (!userId || !targetUserId) return false;
+
+    // 1. Remove all connection records
+    if (this.data.connections) {
+      this.data.connections = this.data.connections.filter(c => 
+        !((c.studentId === userId && c.mentorId === targetUserId) ||
+          (c.studentId === targetUserId && c.mentorId === userId))
+      );
+    }
+
+    // 2. Remove all request records
+    if (this.data.requests) {
+      this.data.requests = this.data.requests.filter(r => 
+        !((r.requesterId === userId && r.mentorId === targetUserId) ||
+          (r.requesterId === targetUserId && r.mentorId === userId))
+      );
+    }
+
+    // 3. Update caller's blockedUserIds list and prune networkIds
+    const user = this.data.users.find(u => u.id === userId);
+    if (user) {
+      if (user.networkIds) {
+        user.networkIds = user.networkIds.filter(id => id !== targetUserId);
+      }
+      if (!user.blockedUserIds) {
+        user.blockedUserIds = [];
+      }
+      if (!user.blockedUserIds.includes(targetUserId)) {
+        user.blockedUserIds.push(targetUserId);
+      }
+    }
+
+    // 4. Prune networkIds from target user
+    const target = this.data.users.find(u => u.id === targetUserId);
+    if (target && target.networkIds) {
+      target.networkIds = target.networkIds.filter(id => id !== userId);
+    }
+
+    this.persist();
+    return true;
+  }
+
+  unblockUser(userId: string, targetUserId: string): boolean {
+    if (!userId || !targetUserId) return false;
+    const user = this.data.users.find(u => u.id === userId);
+    if (user && user.blockedUserIds) {
+      user.blockedUserIds = user.blockedUserIds.filter(id => id !== targetUserId);
+    }
+    this.persist();
+    return true;
+  }
+
+  getBlockedUsers(userId: string): UserProfile[] {
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user || !user.blockedUserIds || user.blockedUserIds.length === 0) return [];
+    return this.data.users.filter(u => user.blockedUserIds?.includes(u.id));
+  }
+
+  getMeetings(connectionId: string): MentorshipMeeting[] {
+    const conn = this.getConnectionById(connectionId);
+    return conn?.meetings || [];
+  }
+
+  addMeeting(connectionId: string, meeting: MentorshipMeeting): MentorshipMeeting {
+    let conn = this.getConnectionById(connectionId);
+    if (!conn) {
+      const rawId = connectionId.replace('conn_', '');
+      conn = this.updateConnection(connectionId, {
+        id: connectionId,
+        requestId: rawId,
+        meetings: [meeting],
+        nextMeetingDate: meeting.date,
+      });
+      return meeting;
+    }
+
+    if (!conn.meetings) conn.meetings = [];
+    const existingIdx = conn.meetings.findIndex(m => m.id === meeting.id);
+    if (existingIdx !== -1) {
+      conn.meetings[existingIdx] = { ...conn.meetings[existingIdx], ...meeting, updatedAt: new Date().toISOString() };
+    } else {
+      conn.meetings.unshift(meeting);
+    }
+    if (meeting.status === 'scheduled') {
+      conn.nextMeetingDate = meeting.date;
+    }
+    this.persist();
+    return meeting;
+  }
+
+  updateMeeting(connectionId: string, meetingId: string, updates: Partial<MentorshipMeeting>): MentorshipMeeting | null {
+    const conn = this.getConnectionById(connectionId);
+    if (!conn) return null;
+    if (!conn.meetings) conn.meetings = [];
+    const idx = conn.meetings.findIndex(m => m.id === meetingId);
+    if (idx === -1) {
+      // If not found, add it as a new meeting record with updates
+      const newM: MentorshipMeeting = {
+        id: meetingId,
+        connectionId,
+        title: updates.title || '1:1 Sync Session',
+        date: updates.date || new Date().toISOString().split('T')[0],
+        time: updates.time || '10:00 AM PST',
+        meetingUrl: updates.meetingUrl || 'https://meet.google.com/new',
+        status: updates.status || 'scheduled',
+        notes: updates.notes,
+        sessionNotes: updates.sessionNotes || [],
+        createdAt: updates.createdAt || new Date().toISOString(),
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      conn.meetings.unshift(newM);
+      this.persist();
+      return newM;
+    }
+    conn.meetings[idx] = { 
+      ...conn.meetings[idx], 
+      ...updates, 
+      updatedAt: new Date().toISOString() 
+    };
+
+    // Recompute next meeting date from scheduled meetings
+    const scheduled = conn.meetings.filter(m => m.status === 'scheduled');
+    if (scheduled.length > 0) {
+      scheduled.sort((a, b) => new Date(`${a.date} ${a.time || '10:00'}`).getTime() - new Date(`${b.date} ${b.time || '10:00'}`).getTime());
+      conn.nextMeetingDate = scheduled[0].date;
+    }
+
+    this.persist();
+    return conn.meetings[idx];
+  }
+
+  deleteMeeting(connectionId: string, meetingId: string): boolean {
+    const conn = this.getConnectionById(connectionId);
+    if (!conn || !conn.meetings) return false;
+    conn.meetings = conn.meetings.filter(m => m.id !== meetingId);
+    
+    // Recompute next meeting date
+    const scheduled = conn.meetings.filter(m => m.status === 'scheduled');
+    if (scheduled.length > 0) {
+      scheduled.sort((a, b) => new Date(`${a.date} ${a.time || '10:00'}`).getTime() - new Date(`${b.date} ${b.time || '10:00'}`).getTime());
+      conn.nextMeetingDate = scheduled[0].date;
+    } else {
+      conn.nextMeetingDate = undefined;
+    }
+
+    this.persist();
+    return true;
   }
 
   // Goals
@@ -765,9 +725,18 @@ class StorageEngine {
     return updated;
   }
 
-  deleteGoal(id: string, userId: string): boolean {
-    const idx = this.data.goals.findIndex(g => g.id === id && g.userId === userId);
-    if (idx === -1) return false;
+  deleteGoal(id: string, userId?: string): boolean {
+    const idx = this.data.goals.findIndex(g => g.id === id || String(g.id) === String(id));
+    if (idx === -1) {
+      // Also try fuzzy search if id might be encoded
+      const altIdx = this.data.goals.findIndex(g => g.id.includes(id) || id.includes(g.id));
+      if (altIdx !== -1) {
+        this.data.goals.splice(altIdx, 1);
+        this.persist();
+        return true;
+      }
+      return false;
+    }
     this.data.goals.splice(idx, 1);
     this.persist();
     return true;
@@ -826,8 +795,8 @@ class StorageEngine {
     return newNotif;
   }
 
-  markNotificationRead(id: string, userId: string): boolean {
-    const notif = this.data.notifications.find(n => n.id === id && n.userId === userId);
+  markNotificationRead(id: string, userId?: string): boolean {
+    const notif = this.data.notifications.find(n => n.id === id && (!userId || n.userId === userId));
     if (!notif) return false;
     notif.read = true;
     this.persist();
@@ -840,6 +809,24 @@ class StorageEngine {
         n.read = true;
       }
     });
+    this.persist();
+    return true;
+  }
+
+  deleteNotification(id: string, userId?: string): boolean {
+    if (!this.data.notifications) return false;
+    const initialLen = this.data.notifications.length;
+    this.data.notifications = this.data.notifications.filter(n => !(n.id === id && (!userId || n.userId === userId)));
+    if (this.data.notifications.length !== initialLen) {
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
+  clearAllNotifications(userId: string): boolean {
+    if (!this.data.notifications) return false;
+    this.data.notifications = this.data.notifications.filter(n => n.userId !== userId);
     this.persist();
     return true;
   }
@@ -886,6 +873,64 @@ class StorageEngine {
     user.isBanned = banned;
     this.persist();
     return user;
+  }
+
+  // Messages
+  getMessages(connectionId: string): ChatMessage[] {
+    if (!this.data.messages) this.data.messages = [];
+    return this.data.messages
+      .filter(m => m.connectionId === connectionId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  createMessage(msg: Partial<ChatMessage>): ChatMessage {
+    if (!this.data.messages) this.data.messages = [];
+    const newMsg: ChatMessage = {
+      id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      connectionId: msg.connectionId || '',
+      senderId: msg.senderId || '',
+      senderName: msg.senderName || '',
+      senderAvatar: msg.senderAvatar,
+      content: msg.content || '',
+      messageType: msg.messageType || 'text',
+      voiceUrl: msg.voiceUrl,
+      replyToId: msg.replyToId,
+      replyToContent: msg.replyToContent,
+      replyToSenderName: msg.replyToSenderName,
+      createdAt: msg.createdAt || new Date().toISOString(),
+    };
+    this.data.messages.push(newMsg);
+    this.persist();
+    return newMsg;
+  }
+
+  deleteMessage(id: string): boolean {
+    if (!this.data.messages) return false;
+    const initialLen = this.data.messages.length;
+    this.data.messages = this.data.messages.filter(m => m.id !== id);
+    if (this.data.messages.length !== initialLen) {
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
+  deleteMessagesForConnection(connectionId: string): boolean {
+    if (!this.data.messages) return false;
+    const cleanId = String(connectionId).trim();
+    const rawId = cleanId.startsWith('conn_') ? cleanId.replace('conn_', '') : cleanId;
+    const initialLen = this.data.messages.length;
+    this.data.messages = this.data.messages.filter(m => 
+      m.connectionId !== cleanId && 
+      m.connectionId !== rawId && 
+      m.connectionId !== `conn_${cleanId}` &&
+      m.connectionId !== `conn_${rawId}`
+    );
+    if (this.data.messages.length !== initialLen) {
+      this.persist();
+      return true;
+    }
+    return false;
   }
 }
 

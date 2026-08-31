@@ -23,11 +23,15 @@ import { MentorshipRequest } from '../types/index';
 
 export const RequestsView: React.FC = () => {
   const { currentUser } = useAuth();
-  const { showToast, triggerRefresh, refreshTrigger, setActiveTab } = useApp();
+  const { showToast, triggerRefresh, refreshTrigger, setActiveTab, openMentorModal } = useApp();
 
   const [activeTabMode, setActiveTabMode] = useState<'incoming' | 'sent'>('incoming');
   const [requests, setRequests] = useState<MentorshipRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'declined'>('all');
 
   // Response dialog state
   const [selectedRequestForResponse, setSelectedRequestForResponse] = useState<MentorshipRequest | null>(null);
@@ -51,6 +55,20 @@ export const RequestsView: React.FC = () => {
   useEffect(() => {
     loadRequests();
   }, [currentUser, refreshTrigger]);
+
+  const handleViewProfile = async (userId: string) => {
+    if (!userId) return;
+    try {
+      const profile = await api.getUserById(userId);
+      if (profile) {
+        openMentorModal(profile);
+      } else {
+        showToast('error', 'Profile Not Found', 'Could not retrieve user profile details.');
+      }
+    } catch (err: any) {
+      showToast('error', 'Error', err.message || 'Could not load profile');
+    }
+  };
 
   // Set default tab according to role
   useEffect(() => {
@@ -110,7 +128,24 @@ export const RequestsView: React.FC = () => {
   };
 
   const isMentor = currentUser?.role === 'mentor';
-  const displayedRequests = activeTabMode === 'incoming' ? incomingRequests : sentRequests;
+  const baseRequests = activeTabMode === 'incoming' ? incomingRequests : sentRequests;
+
+  const displayedRequests = baseRequests.filter((req) => {
+    if (statusFilter !== 'all' && req.status !== statusFilter) {
+      return false;
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const name = (activeTabMode === 'incoming' ? req.requesterName : req.mentorName).toLowerCase();
+      const title = (activeTabMode === 'incoming' ? req.requesterTitle : req.mentorTitle)?.toLowerCase() || '';
+      const msg = req.message?.toLowerCase() || '';
+      const goals = req.goalsSummary?.toLowerCase() || '';
+      if (!name.includes(q) && !title.includes(q) && !msg.includes(q) && !goals.includes(q)) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 text-[#F5F2EB]">
@@ -155,6 +190,43 @@ export const RequestsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Search and Status Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search by name, title, or message keywords..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#12141F] border border-[#262A3C] rounded-xl px-4 py-2.5 text-xs text-[#F5F2EB] placeholder-[#7A766E] focus:outline-none focus:border-[#D4AF37]"
+          />
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-2.5 text-[#7A766E] hover:text-[#F5F2EB] cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {(['all', 'pending', 'accepted', 'declined'] as const).map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatusFilter(st)}
+              className={`px-3 py-2 rounded-xl text-xs font-mono uppercase transition-all cursor-pointer ${
+                statusFilter === st
+                  ? 'bg-[#D4AF37] text-[#090A0F] font-bold'
+                  : 'bg-[#12141F] border border-[#262A3C] text-[#9E9A90] hover:text-[#F5F2EB]'
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Requests List */}
       {isLoading ? (
         <div className="space-y-4">
@@ -168,6 +240,7 @@ export const RequestsView: React.FC = () => {
             const isPending = req.status === 'pending';
             const isAccepted = req.status === 'accepted';
             const isDeclined = req.status === 'declined';
+            const otherPartyId = activeTabMode === 'incoming' ? req.requesterId : req.mentorId;
             const otherPartyName = activeTabMode === 'incoming' ? req.requesterName : req.mentorName;
             const otherPartyAvatar = activeTabMode === 'incoming' ? req.requesterAvatar : req.mentorAvatar;
             const otherPartyTitle = activeTabMode === 'incoming' ? req.requesterTitle : req.mentorTitle;
@@ -179,16 +252,19 @@ export const RequestsView: React.FC = () => {
               >
                 <div className="space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232738] pb-4">
-                    <div className="flex items-center space-x-3.5">
+                    <div 
+                      onClick={() => handleViewProfile(otherPartyId)}
+                      className="flex items-center space-x-3.5 cursor-pointer group"
+                    >
                       <img 
                         src={otherPartyAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
                         alt={otherPartyName} 
-                        className="w-12 h-12 rounded-xl object-cover border border-[#343A52]"
+                        className="w-12 h-12 rounded-xl object-cover border border-[#343A52] group-hover:border-[#D4AF37] transition-colors"
                         referrerPolicy="no-referrer"
                       />
                       <div>
                         <div className="flex items-center space-x-2">
-                          <h3 className="text-base font-serif font-bold text-[#F5F2EB]">{otherPartyName}</h3>
+                          <h3 className="text-base font-serif font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors">{otherPartyName}</h3>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
                             isAccepted ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30' :
                             isPending ? 'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30' :
@@ -233,39 +309,49 @@ export const RequestsView: React.FC = () => {
                 </div>
 
                 {/* Actions Row */}
-                <div className="pt-3 border-t border-[#232738] flex items-center justify-between">
-                  {activeTabMode === 'incoming' && isPending ? (
-                    <div className="flex items-center space-x-2 ml-auto">
+                <div className="pt-3 border-t border-[#232738] flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    onClick={() => handleViewProfile(otherPartyId)}
+                    className="px-3.5 py-1.5 rounded-xl bg-[#161925] border border-[#262A3C] hover:border-[#3D4460] text-xs font-semibold text-[#F5F2EB] flex items-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    <User className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>View Full Profile</span>
+                  </button>
+
+                  <div className="flex items-center space-x-2 ml-auto">
+                    {activeTabMode === 'incoming' && isPending ? (
+                      <>
+                        <button
+                          onClick={() => handleOpenResponseDialog(req, 'declined')}
+                          className="px-4 py-2 rounded-xl bg-[#161925] border border-[#262A3C] text-xs text-[#9E9A90] hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          Decline
+                        </button>
+                        <button
+                          onClick={() => handleOpenResponseDialog(req, 'accepted')}
+                          className="px-5 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 cursor-pointer shadow-md shadow-[#D4AF37]/15"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Accept Mentorship</span>
+                        </button>
+                      </>
+                    ) : activeTabMode === 'sent' && isPending ? (
                       <button
-                        onClick={() => handleOpenResponseDialog(req, 'declined')}
-                        className="px-4 py-2 rounded-xl bg-[#161925] border border-[#262A3C] text-xs text-[#9E9A90] hover:text-red-400 transition-colors cursor-pointer"
+                        onClick={() => handleCancelRequest(req.id, req.mentorName)}
+                        className="text-xs text-[#7A766E] hover:text-red-400 transition-colors cursor-pointer"
                       >
-                        Decline
+                        Withdraw Request
                       </button>
+                    ) : isAccepted ? (
                       <button
-                        onClick={() => handleOpenResponseDialog(req, 'accepted')}
-                        className="px-5 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 cursor-pointer shadow-md shadow-[#D4AF37]/15"
+                        onClick={() => setActiveTab('connections')}
+                        className="text-xs font-semibold text-[#D4AF37] hover:text-[#E6C258] flex items-center space-x-1 cursor-pointer"
                       >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Accept Mentorship</span>
+                        <span>Open 1:1 Workspace</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                  ) : activeTabMode === 'sent' && isPending ? (
-                    <button
-                      onClick={() => handleCancelRequest(req.id, req.mentorName)}
-                      className="text-xs text-[#7A766E] hover:text-red-400 transition-colors cursor-pointer ml-auto"
-                    >
-                      Withdraw Request
-                    </button>
-                  ) : isAccepted ? (
-                    <button
-                      onClick={() => setActiveTab('connections')}
-                      className="text-xs font-semibold text-[#D4AF37] hover:text-[#E6C258] flex items-center space-x-1 cursor-pointer ml-auto"
-                    >
-                      <span>Open 1:1 Workspace</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </div>
 
               </div>

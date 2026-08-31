@@ -11,7 +11,12 @@ import {
   User,
   RotateCcw,
   Sparkles,
-  ChevronLeft
+  ChevronLeft,
+  Loader2,
+  Clock,
+  Shield,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -19,13 +24,13 @@ import { UserRole } from '../types/index';
 import { getSupabaseClient, isSupabaseConfigured } from '../services/supabase';
 import { MentorNexusBrand } from './MentorNexusBrand';
 
-export type AuthViewMode = 'choice' | 'signin' | 'signup' | 'forgot_password' | 'email_confirmation';
+export type AuthViewMode = 'choice' | 'signin' | 'signup' | 'forgot_password' | 'update_password' | 'reset_password' | 'email_confirmation';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: AuthViewMode;
-  initialRole?: 'student' | 'mentor';
+  initialRole?: 'student' | 'early_career' | 'mentor';
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -34,15 +39,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'choice',
   initialRole = 'student'
 }) => {
-  const { registerUser, switchUser, signInWithEmail, allUsers } = useAuth();
+  const { 
+    registerUser, 
+    signInWithEmail, 
+    resetPasswordForEmail,
+    updatePassword,
+    resendConfirmationEmail, 
+    checkConfirmationStatus, 
+    currentUser 
+  } = useAuth();
   const { showToast, setActiveTab } = useApp();
 
   const [mode, setMode] = useState<AuthViewMode>(initialMode);
-  const [role, setRole] = useState<'student' | 'mentor'>(initialRole);
+  const [role, setRole] = useState<'student' | 'early_career' | 'mentor'>(initialRole);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showSignInPassword, setShowSignInPassword] = useState(false);
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+  const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [organization, setOrganization] = useState('');
   const [title, setTitle] = useState('');
   const [industry, setIndustry] = useState('Technology & AI');
@@ -51,6 +71,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
 
   // Sync mode if changed from props
   useEffect(() => {
@@ -58,7 +79,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (initialRole) setRole(initialRole);
     setError(null);
     setInfoMessage(null);
+    setShowSignInPassword(false);
+    setShowSignUpPassword(false);
+    setShowSignUpConfirmPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmNewPassword(false);
+    setNewPassword('');
+    setConfirmNewPassword('');
   }, [initialMode, initialRole, isOpen]);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
+
+  // Auto-detect confirmed session when modal is open
+  useEffect(() => {
+    if (isOpen && currentUser && mode === 'email_confirmation') {
+      showToast('success', 'Email confirmed!', `Welcome to MentorNexus, ${currentUser.name}!`);
+      onClose();
+      setActiveTab('dashboard');
+    }
+  }, [currentUser, isOpen, mode, onClose, setActiveTab, showToast]);
 
   if (!isOpen) return null;
 
@@ -87,43 +133,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       setIsSubmitting(true);
       const skillsArray = skillsText.split(',').map(s => s.trim()).filter(Boolean);
+      const cleanEmail = email.trim().toLowerCase();
       
-      const newUser = await registerUser({
+      const defaultTitle = role === 'student' 
+        ? 'Student / Learner' 
+        : role === 'early_career' 
+          ? 'Early-Career Professional' 
+          : 'Professional Mentor';
+
+      const regResult = await registerUser({
         name: fullName.trim(),
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password: password,
         role: role as UserRole,
-        title: title.trim() || (role === 'student' ? 'Learner / Aspiring Professional' : 'Professional Practitioner'),
+        title: title.trim() || defaultTitle,
         organization: organization.trim() || 'Independent',
         industry: industry,
         skills: skillsArray.length > 0 ? skillsArray : ['Career Growth', 'Strategy'],
-        bio: `${role === 'student' ? 'Aspiring professional' : 'Experienced mentor'} focused on ${industry}.`,
-        yearsOfExperience: role === 'mentor' ? 5 : 1,
-        mentoringAreas: role === 'mentor' ? ['Career Navigation', 'Technical Depth'] : ['Career Guidance'],
+        bio: `${role === 'student' ? 'Student / Learner' : role === 'early_career' ? 'Early-career practitioner' : 'Experienced mentor'} focused on ${industry}.`,
+        yearsOfExperience: role === 'mentor' ? 5 : (role === 'early_career' ? 2 : 1),
+        mentoringAreas: role === 'mentor' ? ['Career Navigation', 'Technical Depth', 'Leadership'] : ['Career Guidance', 'Skill Development'],
         interests: ['Professional Development', industry],
         verificationStatus: role === 'mentor' ? 'pending' : 'verified',
       });
 
-      setRegisteredEmail(email.trim().toLowerCase());
+      setRegisteredEmail(cleanEmail);
 
-      // If Supabase requires email verification
-      if (isSupabaseConfigured) {
-        const client = getSupabaseClient();
-        const { data: sessionData } = await client?.auth.getSession() || { data: { session: null } };
-        
-        if (!sessionData.session) {
-          // Email confirmation is required by Supabase project
-          setMode('email_confirmation');
-          return;
-        }
+      if (regResult.requiresEmailConfirmation) {
+        setMode('email_confirmation');
+        setInfoMessage(`We've sent a verification link to ${cleanEmail}. Please check your inbox to confirm your account.`);
+        setResendCooldown(60);
+        return;
       }
 
-      showToast('success', 'Account created successfully', `Welcome to MentorNexus, ${newUser.name}!`);
+      showToast('success', 'Account created successfully', `Welcome to MentorNexus, ${regResult.user.name}!`);
       onClose();
       setActiveTab('dashboard');
     } catch (err: any) {
       if (err?.message?.toLowerCase().includes('already registered') || err?.message?.toLowerCase().includes('already exists')) {
         setError('An account with this email already exists. Please sign in instead.');
+      } else if (err?.isRateLimit || err?.message?.toLowerCase().includes('rate limit') || err?.message?.toLowerCase().includes('over_email_send_rate_limit')) {
+        setError('Supabase email rate limit exceeded. If you already created this account previously, your account exists — please click "Sign In" with your password. If you need a new confirmation email, please wait a few minutes or disable email confirmation in your Supabase Auth settings.');
       } else {
         setError(err?.message || 'Failed to create account. Please try again.');
       }
@@ -153,20 +203,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
       setActiveTab('dashboard');
     } catch (err: any) {
-      if (err?.message?.toLowerCase().includes('email not confirmed') || err?.message?.toLowerCase().includes('not verified')) {
-        setRegisteredEmail(email.trim());
+      if (
+        err?.isEmailNotConfirmed || 
+        err?.message?.toLowerCase().includes('email not confirmed') || 
+        err?.message?.toLowerCase().includes('not verified') ||
+        err?.message?.toLowerCase().includes('unconfirmed')
+      ) {
+        setRegisteredEmail(email.trim().toLowerCase());
         setMode('email_confirmation');
+        setError(null);
+        setInfoMessage('Your email address has not been confirmed yet. Please verify your email or request a new confirmation link.');
       } else {
-        // Check if matching in local user list for easy evaluation fallback
-        const matched = allUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
-        if (matched) {
-          await switchUser(matched.id);
-          showToast('success', 'Signed in successfully', `Welcome back, ${matched.name}!`);
-          onClose();
-          setActiveTab('dashboard');
-        } else {
-          setError("We couldn't sign you in. Please check your email and password.");
-        }
+        setError(err?.message || "Invalid email or password. Please check your credentials.");
       }
     } finally {
       setIsSubmitting(false);
@@ -185,16 +233,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       setIsSubmitting(true);
-      if (isSupabaseConfigured) {
-        const client = getSupabaseClient();
-        if (client) {
-          const { error: resetErr } = await client.auth.resetPasswordForEmail(email.trim(), {
-            redirectTo: window.location.origin
-          });
-          if (resetErr) throw resetErr;
-        }
-      }
-      setInfoMessage(`Password reset link sent to ${email.trim()}. Please check your email inbox.`);
+      const res = await resetPasswordForEmail(email.trim());
+      setInfoMessage(res.message || `Password reset link sent to ${email.trim()}. Please check your email inbox.`);
+      showToast('success', 'Reset Link Sent', `Password reset instructions sent to ${email.trim()}.`);
     } catch (err: any) {
       setError(err?.message || 'Could not send password reset email. Please verify the address.');
     } finally {
@@ -202,37 +243,90 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleResendVerification = async () => {
-    if (!registeredEmail) return;
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfoMessage(null);
+
+    if (!newPassword) {
+      setError('Please enter a new password');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      if (isSupabaseConfigured) {
-        const client = getSupabaseClient();
-        if (client) {
-          await client.auth.resend({
-            type: 'signup',
-            email: registeredEmail
-          });
-        }
+      await updatePassword(newPassword);
+
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
-      showToast('success', 'Verification Resent', `A new verification email has been sent to ${registeredEmail}`);
+
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPassword('');
+      setConfirmPassword('');
+      showToast('success', 'Password Updated', 'Your password has been successfully updated. Please sign in with your new credentials.');
+      setMode('signin');
+      setInfoMessage('Password updated successfully! Please sign in with your new password.');
     } catch (err: any) {
-      setError(err?.message || 'Failed to resend verification email');
+      setError(err?.message || 'Failed to update password. Your reset link may be invalid or expired.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleQuickLogin = async (userId: string) => {
+  const handleResendVerification = async () => {
+    const targetEmail = registeredEmail || email;
+    if (!targetEmail) {
+      setError('Please provide your email address to resend the confirmation link.');
+      return;
+    }
+
+    if (resendCooldown > 0) {
+      setInfoMessage(`Please wait ${resendCooldown}s before requesting another confirmation email.`);
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      await switchUser(userId);
-      const user = allUsers.find(u => u.id === userId);
-      showToast('success', 'Authenticated', `Welcome, ${user?.name}!`);
-      onClose();
-      setActiveTab('dashboard');
+      setError(null);
+      const res = await resendConfirmationEmail(targetEmail);
+      setInfoMessage(res.message || `A new verification email has been sent to ${targetEmail}.`);
+      showToast('success', 'Verification Resent', `Check ${targetEmail} for the confirmation link.`);
+      setResendCooldown(60);
     } catch (err: any) {
-      setError('Failed to authenticate');
+      setError(err?.message || 'Failed to resend verification email.');
+      if (err?.message?.toLowerCase().includes('rate limit') || err?.message?.toLowerCase().includes('wait')) {
+        setResendCooldown(60);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCheckConfirmation = async () => {
+    const targetEmail = registeredEmail || email;
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      const res = await checkConfirmationStatus(targetEmail);
+      if (res.confirmed && res.user) {
+        showToast('success', 'Email confirmed!', `Welcome to MentorNexus, ${res.user.name}!`);
+        onClose();
+        setActiveTab('dashboard');
+      } else {
+        setInfoMessage('Confirmation not detected yet. Please ensure you clicked the link in your email, or wait a few seconds and check again.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Could not verify status. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -257,9 +351,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-5 p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 text-xs flex items-start space-x-3">
-            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{error}</span>
+          <div className="mb-5 p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 text-xs flex flex-col space-y-2.5">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{error}</span>
+            </div>
+            {mode === 'signup' && (error.toLowerCase().includes('sign in') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('already exists') || error.toLowerCase().includes('already registered')) && (
+              <div className="pl-7">
+                <button
+                  type="button"
+                  onClick={() => { setMode('signin'); setError(null); }}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0A0B10] font-bold text-xs transition-colors cursor-pointer"
+                >
+                  <span>Switch to Sign In →</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -374,38 +481,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Role Selection */}
               <div className="space-y-2">
                 <label className="block text-xs uppercase font-mono tracking-wider text-[#9E9A90]">Select Your Role</label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div
                     onClick={() => setRole('student')}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                    className={`p-3 rounded-xl border transition-all cursor-pointer ${
                       role === 'student'
                         ? 'bg-[#181C2C] border-[#D4AF37] text-[#F5F2EB]'
                         : 'bg-[#141622] border-[#262A3C] text-[#9E9A90] hover:border-[#3D4460]'
                     }`}
                   >
-                    <div className="flex items-center space-x-2 mb-1">
+                    <div className="flex items-center space-x-1.5 mb-1">
                       <GraduationCap className={`w-4 h-4 ${role === 'student' ? 'text-[#D4AF37]' : 'text-[#7A766E]'}`} />
-                      <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">Learner / Mentee</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">Learner</span>
                     </div>
                     <p className="text-[10px] text-[#9E9A90] leading-relaxed">
-                      Define goals, find experienced mentors, and track milestone roadmaps.
+                      Define goals, find mentors, and track milestones.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setRole('early_career')}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                      role === 'early_career'
+                        ? 'bg-[#181C2C] border-[#D4AF37] text-[#F5F2EB]'
+                        : 'bg-[#141622] border-[#262A3C] text-[#9E9A90] hover:border-[#3D4460]'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 mb-1">
+                      <Briefcase className={`w-4 h-4 ${role === 'early_career' ? 'text-[#D4AF37]' : 'text-[#7A766E]'}`} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">Early-Career</span>
+                    </div>
+                    <p className="text-[10px] text-[#9E9A90] leading-relaxed">
+                      Accelerate progression and prepare for milestones.
                     </p>
                   </div>
 
                   <div
                     onClick={() => setRole('mentor')}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                    className={`p-3 rounded-xl border transition-all cursor-pointer ${
                       role === 'mentor'
                         ? 'bg-[#181C2C] border-[#D4AF37] text-[#F5F2EB]'
                         : 'bg-[#141622] border-[#262A3C] text-[#9E9A90] hover:border-[#3D4460]'
                     }`}
                   >
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Briefcase className={`w-4 h-4 ${role === 'mentor' ? 'text-[#D4AF37]' : 'text-[#7A766E]'}`} />
-                      <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">Professional Mentor</span>
+                    <div className="flex items-center space-x-1.5 mb-1">
+                      <Shield className={`w-4 h-4 ${role === 'mentor' ? 'text-[#D4AF37]' : 'text-[#7A766E]'}`} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">Mentor</span>
                     </div>
                     <p className="text-[10px] text-[#9E9A90] leading-relaxed">
-                      Share your experience, review requests, and guide ambitious learners.
+                      Share experience and guide ambitious talent.
                     </p>
                   </div>
                 </div>
@@ -456,16 +580,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3" />
+                    <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3 pointer-events-none" />
                     <input
-                      type="password"
+                      type={showSignUpPassword ? 'text' : 'password'}
                       required
                       id="signup-password-input"
                       placeholder="Create a password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
                     />
+                    <button
+                      type="button"
+                      id="signup-password-toggle-button"
+                      onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                      className="absolute right-3 top-2.5 p-1 text-[#7A766E] hover:text-[#D4AF37] transition-colors focus:outline-none cursor-pointer flex items-center justify-center rounded-lg"
+                      aria-label={showSignUpPassword ? "Hide password" : "Show password"}
+                      title={showSignUpPassword ? "Hide password" : "Show password"}
+                    >
+                      {showSignUpPassword ? (
+                        <Eye className="w-4 h-4" />
+                      ) : (
+                        <EyeOff className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -474,16 +612,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Confirm Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3" />
+                    <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3 pointer-events-none" />
                     <input
-                      type="password"
+                      type={showSignUpConfirmPassword ? 'text' : 'password'}
                       required
                       id="signup-confirmpassword-input"
                       placeholder="Confirm your password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
                     />
+                    <button
+                      type="button"
+                      id="signup-confirmpassword-toggle-button"
+                      onClick={() => setShowSignUpConfirmPassword(!showSignUpConfirmPassword)}
+                      className="absolute right-3 top-2.5 p-1 text-[#7A766E] hover:text-[#D4AF37] transition-colors focus:outline-none cursor-pointer flex items-center justify-center rounded-lg"
+                      aria-label={showSignUpConfirmPassword ? "Hide password" : "Show password"}
+                      title={showSignUpConfirmPassword ? "Hide password" : "Show password"}
+                    >
+                      {showSignUpConfirmPassword ? (
+                        <Eye className="w-4 h-4" />
+                      ) : (
+                        <EyeOff className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -623,16 +775,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3" />
+                  <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3 pointer-events-none" />
                   <input
-                    type="password"
+                    type={showSignInPassword ? 'text' : 'password'}
                     required
                     id="signin-password-input"
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
+                    className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
                   />
+                  <button
+                    type="button"
+                    id="signin-password-toggle-button"
+                    onClick={() => setShowSignInPassword(!showSignInPassword)}
+                    className="absolute right-3 top-2.5 p-1 text-[#7A766E] hover:text-[#D4AF37] transition-colors focus:outline-none cursor-pointer flex items-center justify-center rounded-lg"
+                    aria-label={showSignInPassword ? "Hide password" : "Show password"}
+                    title={showSignInPassword ? "Hide password" : "Show password"}
+                  >
+                    {showSignInPassword ? (
+                      <Eye className="w-4 h-4" />
+                    ) : (
+                      <EyeOff className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -703,71 +869,243 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* ======================================================== */}
-        {/* MODE: EMAIL CONFIRMATION */}
+        {/* MODE: SET NEW PASSWORD / RESET PASSWORD */}
         {/* ======================================================== */}
-        {mode === 'email_confirmation' && (
-          <div className="space-y-6 text-center py-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
-              <Mail className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-2xl font-serif font-bold text-[#F5F2EB]">Check your email</h3>
-              <p className="text-xs text-[#9E9A90] max-w-sm mx-auto leading-relaxed">
-                We've sent a verification link to <span className="text-[#F5F2EB] font-mono font-semibold">{registeredEmail || email}</span>.
-              </p>
-              <p className="text-xs text-[#9E9A90] max-w-sm mx-auto leading-relaxed font-medium text-[#D4AF37]">
-                Please verify your email before continuing to MentorNexus.
+        {(mode === 'update_password' || mode === 'reset_password') && (
+          <div className="space-y-6">
+            <div className="space-y-1.5">
+              <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#F5F2EB]">
+                Set new password.
+              </h2>
+              <p className="text-xs text-[#9E9A90] leading-relaxed">
+                Please enter a secure new password for your MentorNexus account.
               </p>
             </div>
 
-            <div className="space-y-3 pt-2 max-w-sm mx-auto">
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleResendVerification}
-                className="w-full py-3 rounded-xl bg-[#181B28] hover:bg-[#232738] text-[#D4AF37] border border-[#343A52] text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Resend Verification Email</span>
-              </button>
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#9E9A90] mb-1.5">
+                  New Password <span className="text-red-400">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3 pointer-events-none" />
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    id="update-new-password-input"
+                    placeholder="Enter new password (min. 6 characters)"
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <button
+                    type="button"
+                    id="update-new-password-toggle-btn"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-2.5 p-1 text-[#7A766E] hover:text-[#D4AF37] transition-colors focus:outline-none cursor-pointer flex items-center justify-center rounded-lg"
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                    title={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? (
+                      <Eye className="w-4 h-4" />
+                    ) : (
+                      <EyeOff className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => { setMode('signin'); setError(null); }}
-                className="w-full py-3 rounded-xl bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
-              >
-                Back to Sign In
-              </button>
-            </div>
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#9E9A90] mb-1.5">
+                  Confirm New Password <span className="text-red-400">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-[#7A766E] absolute left-3.5 top-3 pointer-events-none" />
+                  <input
+                    type={showConfirmNewPassword ? 'text' : 'password'}
+                    required
+                    id="update-confirm-new-password-input"
+                    placeholder="Re-enter your new password"
+                    value={confirmNewPassword}
+                    onChange={(e) => {
+                      setConfirmNewPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    className="w-full bg-[#141622] border border-[#2D3349] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <button
+                    type="button"
+                    id="update-confirm-new-password-toggle-btn"
+                    onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                    className="absolute right-3 top-2.5 p-1 text-[#7A766E] hover:text-[#D4AF37] transition-colors focus:outline-none cursor-pointer flex items-center justify-center rounded-lg"
+                    aria-label={showConfirmNewPassword ? "Hide password" : "Show password"}
+                    title={showConfirmNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmNewPassword ? (
+                      <Eye className="w-4 h-4" />
+                    ) : (
+                      <EyeOff className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  id="submit-update-password-btn"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 rounded-xl bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-lg shadow-[#D4AF37]/15 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-[#090A0F]" />
+                      <span>Updating Password...</span>
+                    </>
+                  ) : (
+                    <span>Update Password →</span>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setMode('signin'); setError(null); setInfoMessage(null); }}
+                  className="text-xs text-[#9E9A90] hover:text-[#F5F2EB] cursor-pointer"
+                >
+                  ← Back to Sign In
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
-        {/* 1-Click Evaluation Personas for Seamless Testing */}
-        {mode !== 'email_confirmation' && (
-          <div className="mt-8 pt-6 border-t border-[#1E2234] space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-[#7A766E]">Evaluation Profiles</span>
-              <span className="text-[10px] text-[#D4AF37] font-mono">1-Click Instant Access</span>
+        {/* ======================================================== */}
+        {/* MODE: EMAIL CONFIRMATION */}
+        {/* ======================================================== */}
+        {mode === 'email_confirmation' && (
+          <div className="space-y-6 py-2">
+            <div className="text-center space-y-4">
+              <div className="relative w-16 h-16 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37] shadow-xl shadow-[#D4AF37]/5">
+                <Mail className="w-8 h-8 text-[#D4AF37]" />
+                <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#10B981] border-2 border-[#10121D] flex items-center justify-center">
+                  <CheckCircle2 className="w-2.5 h-2.5 text-[#090A0F]" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-2xl sm:text-3xl font-serif font-bold text-[#F5F2EB]">Check your email</h3>
+                <p className="text-xs text-[#9E9A90] max-w-md mx-auto leading-relaxed">
+                  We have sent a verification link to{' '}
+                  <span className="text-[#F5F2EB] font-mono font-semibold bg-[#181B28] px-2 py-0.5 rounded border border-[#2D3349]">
+                    {registeredEmail || email || 'your email'}
+                  </span>
+                </p>
+                <p className="text-xs text-[#D4AF37] font-medium max-w-sm mx-auto">
+                  Please click the link in the email to activate your account and access MentorNexus.
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {allUsers.map((u) => (
+            {/* Instruction Steps Card */}
+            <div className="bg-[#141624] border border-[#262A3C] rounded-2xl p-4 sm:p-5 text-left space-y-3">
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 rounded-full bg-[#1E2234] border border-[#343A52] text-[#D4AF37] text-[11px] font-mono font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  1
+                </div>
+                <div className="text-xs text-[#9E9A90] leading-relaxed">
+                  <span className="text-[#F5F2EB] font-medium block">Open your inbox</span>
+                  Look for an email from MentorNexus or Supabase Auth.
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 rounded-full bg-[#1E2234] border border-[#343A52] text-[#D4AF37] text-[11px] font-mono font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  2
+                </div>
+                <div className="text-xs text-[#9E9A90] leading-relaxed">
+                  <span className="text-[#F5F2EB] font-medium block">Click the confirmation link</span>
+                  Confirming your email authorizes your account securely.
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 rounded-full bg-[#1E2234] border border-[#343A52] text-[#D4AF37] text-[11px] font-mono font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  3
+                </div>
+                <div className="text-xs text-[#9E9A90] leading-relaxed">
+                  <span className="text-[#F5F2EB] font-medium block">Return to MentorNexus</span>
+                  Once confirmed, you will immediately gain full platform access.
+                </div>
+              </div>
+            </div>
+
+            {/* Spam notice */}
+            <p className="text-[11px] text-[#7A766E] text-center italic">
+              Didn't see the email? Please check your Spam or Promotions folder.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="space-y-3 pt-1">
+              <button
+                type="button"
+                id="check-confirmation-status-btn"
+                disabled={isSubmitting}
+                onClick={handleCheckConfirmation}
+                className="w-full py-3.5 rounded-xl bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-lg shadow-[#D4AF37]/15 disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#090A0F]" />
+                    <span>Checking confirmation status...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>I've Confirmed My Email →</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                id="resend-verification-email-btn"
+                disabled={isSubmitting || resendCooldown > 0}
+                onClick={handleResendVerification}
+                className="w-full py-3 rounded-xl bg-[#181B28] hover:bg-[#232738] text-[#D4AF37] border border-[#343A52] text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resendCooldown > 0 ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-[#9E9A90]" />
+                    <span className="text-[#9E9A90]">Resend Available in {resendCooldown}s</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className={`w-3.5 h-3.5 ${isSubmitting ? 'animate-spin' : ''}`} />
+                    <span>Resend Confirmation Email</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center justify-between pt-2 px-1 text-xs">
                 <button
-                  key={u.id}
                   type="button"
-                  onClick={() => handleQuickLogin(u.id)}
-                  className="p-2.5 rounded-xl bg-[#141622] hover:bg-[#1C2030] border border-[#262A3C] hover:border-[#D4AF37]/40 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                  onClick={() => { setMode('signin'); setError(null); setInfoMessage(null); }}
+                  className="text-[#9E9A90] hover:text-[#F5F2EB] cursor-pointer"
                 >
-                  <div className="flex items-center space-x-2">
-                    <span className={`w-2 h-2 rounded-full ${
-                      u.role === 'admin' ? 'bg-purple-400' : u.role === 'mentor' ? 'bg-[#D4AF37]' : 'bg-[#10B981]'
-                    }`} />
-                    <span className="text-xs font-semibold text-[#F5F2EB] truncate">{u.name}</span>
-                  </div>
-                  <span className="text-[10px] text-[#7A766E] uppercase font-mono mt-1 capitalize">{u.role}</span>
+                  ← Back to Sign In
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => { setMode('signup'); setError(null); setInfoMessage(null); }}
+                  className="text-[#D4AF37] hover:underline cursor-pointer"
+                >
+                  Change Email / Re-register
+                </button>
+              </div>
             </div>
           </div>
         )}

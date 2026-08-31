@@ -1,7 +1,7 @@
 {
   "name": "MentorNexus",
   "description": "Professional mentorship and growth platform connecting learners and early-career talent with experienced mentors, goal tracking, and curated learning resources.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
 

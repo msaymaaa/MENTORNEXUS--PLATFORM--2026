@@ -19,7 +19,8 @@ import {
   RotateCcw,
   GraduationCap,
   Target,
-  Info
+  Info,
+  Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -28,13 +29,16 @@ import { UserProfile, MentorshipRequest, MentorshipConnection, Goal } from '../t
 
 export const DiscoverView: React.FC = () => {
   const { currentUser } = useAuth();
-  const { openMentorModal, openPersonaSwitcher, refreshTrigger, showToast } = useApp();
+  const { openMentorModal, refreshTrigger, showToast, setActiveTab } = useApp();
 
   const [mentors, setMentors] = useState<UserProfile[]>([]);
   const [userGoals, setUserGoals] = useState<Goal[]>([]);
   const [requests, setRequests] = useState<MentorshipRequest[]>([]);
   const [connections, setConnections] = useState<MentorshipConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Discovery Directory Category: 'all' | 'mentors' | 'learners' | 'early_career'
+  const [discoveryType, setDiscoveryType] = useState<'all' | 'mentors' | 'learners' | 'early_career'>('mentors');
 
   // Search, Filters & Sorting state
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,18 +77,18 @@ export const DiscoverView: React.FC = () => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [mentorList, reqList, connList, goalsList] = await Promise.all([
-        api.getMentors({ verifiedOnly: true }),
+      const [profileList, reqList, connList, goalsList] = await Promise.all([
+        api.getProfilesByRole(discoveryType),
         currentUser ? api.getRequests(currentUser.id).catch(() => []) : Promise.resolve([]),
         currentUser ? api.getConnections(currentUser.id).catch(() => []) : Promise.resolve([]),
         currentUser ? api.getGoals(currentUser.id).catch(() => []) : Promise.resolve([])
       ]);
-      setMentors(mentorList);
+      setMentors(profileList);
       setRequests(reqList);
       setConnections(connList);
       setUserGoals(goalsList);
     } catch (err) {
-      console.error('Error fetching mentors:', err);
+      console.error('Error fetching discovery profiles:', err);
     } finally {
       setIsLoading(false);
     }
@@ -92,7 +96,7 @@ export const DiscoverView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [currentUser, refreshTrigger]);
+  }, [currentUser, refreshTrigger, discoveryType]);
 
   // Calculate goal relevance for a mentor given active user goals
   const calculateGoalMatch = (mentor: UserProfile) => {
@@ -249,18 +253,69 @@ export const DiscoverView: React.FC = () => {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#232738] pb-6">
         <div className="space-y-2">
-          <span className="text-[11px] uppercase font-mono tracking-widest text-[#D4AF37]">Verified Mentorship Directory</span>
+          <span className="text-[11px] uppercase font-mono tracking-widest text-[#D4AF37]">Verified Community & Mentorship Directory</span>
           <h1 className="text-3xl font-serif font-bold text-[#F5F2EB]">Find the experience you need.</h1>
           <p className="text-xs text-[#9E9A90] max-w-xl">
-            Search verified practitioners by target role, technical discipline, or career milestones.
+            Discover verified practitioners, mentors, and fellow learners across technical disciplines and career milestones.
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
           <span className="text-xs font-mono text-[#9E9A90]">
-            Showing <strong className="text-[#D4AF37]">{filteredAndSortedMentors.length}</strong> {filteredAndSortedMentors.length === 1 ? 'practitioner' : 'practitioners'}
+            Showing <strong className="text-[#D4AF37]">{filteredAndSortedMentors.length}</strong> {filteredAndSortedMentors.length === 1 ? 'member' : 'members'}
           </span>
         </div>
+      </div>
+
+      {/* Directory Category Selector */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-[#12141F] border border-[#262A3C] rounded-2xl w-fit">
+        <button
+          onClick={() => setDiscoveryType('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+            discoveryType === 'all'
+              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
+              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>All Community</span>
+        </button>
+
+        <button
+          onClick={() => setDiscoveryType('mentors')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+            discoveryType === 'mentors'
+              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
+              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          <span>Mentors & Practitioners</span>
+        </button>
+
+        <button
+          onClick={() => setDiscoveryType('learners')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+            discoveryType === 'learners'
+              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
+              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
+          }`}
+        >
+          <GraduationCap className="w-3.5 h-3.5" />
+          <span>Learners & Mentees</span>
+        </button>
+
+        <button
+          onClick={() => setDiscoveryType('early_career')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+            discoveryType === 'early_career'
+              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
+              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
+          }`}
+        >
+          <Briefcase className="w-3.5 h-3.5" />
+          <span>Early Career</span>
+        </button>
       </div>
 
       {/* Search & Filter Bar Controls */}
@@ -509,15 +564,33 @@ export const DiscoverView: React.FC = () => {
                       <div>
                         <div className="flex items-center space-x-1.5">
                           <h3 className="text-base font-serif font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors">{mentor.name}</h3>
-                          <Shield className="w-3.5 h-3.5 text-[#D4AF37]" title="Verified Practitioner" />
+                          {mentor.role === 'mentor' ? (
+                            mentor.verificationStatus === 'verified' ? (
+                              <Shield className="w-3.5 h-3.5 text-[#D4AF37]" title="Verified Mentor" />
+                            ) : (
+                              <Award className="w-3.5 h-3.5 text-[#D4AF37]/70" title="Industry Mentor" />
+                            )
+                          ) : mentor.role === 'early_career' ? (
+                            <Briefcase className="w-3.5 h-3.5 text-emerald-400" title="Early-Career Member" />
+                          ) : mentor.role === 'admin' ? (
+                            <Shield className="w-3.5 h-3.5 text-purple-400" title="Administrator" />
+                          ) : (
+                            <GraduationCap className="w-3.5 h-3.5 text-blue-400" title="Learner / Student" />
+                          )}
                         </div>
                         <p className="text-xs text-[#9E9A90] font-medium line-clamp-1">{mentor.title}</p>
                       </div>
                     </div>
 
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1B1E2D] border border-[#2D3349] text-[#C5A880] shrink-0">
-                      {mentor.yearsOfExperience} yrs exp
-                    </span>
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181B28] border border-[#2D3349] text-[#10B981] flex items-center space-x-1">
+                        <Users className="w-2.5 h-2.5 text-[#10B981]" />
+                        <span>{mentor.networkCount ? `${mentor.networkCount} connections` : `${Math.max(12, ((mentor.yearsOfExperience || 1) * 8) + 14)}+ connections`}</span>
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1B1E2D] border border-[#2D3349] text-[#C5A880]">
+                        {mentor.yearsOfExperience} yrs exp
+                      </span>
+                    </div>
                   </div>
 
                   {/* Goal Relevance Indicator (Section 21) */}
@@ -570,7 +643,11 @@ export const DiscoverView: React.FC = () => {
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
 
-                  {reqStatus ? (
+                  {mentor.id === currentUser?.id ? (
+                    <span className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-[#141622] text-[#7A766E] border border-[#262A3C]">
+                      Your Profile
+                    </span>
+                  ) : reqStatus ? (
                     <span className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold ${
                       reqStatus.status === 'connected' ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30' :
                       reqStatus.status === 'pending' ? 'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30' :
@@ -578,13 +655,21 @@ export const DiscoverView: React.FC = () => {
                     }`}>
                       {reqStatus.label}
                     </span>
-                  ) : (
+                  ) : mentor.role === 'mentor' ? (
                     <button
                       onClick={() => openMentorModal(mentor)}
                       className="px-3.5 py-1.5 rounded-lg bg-[#181B28] hover:bg-[#D4AF37] hover:text-[#090A0F] text-[#F5F2EB] text-xs font-bold uppercase tracking-wider border border-[#343A52] hover:border-transparent transition-all flex items-center space-x-1.5 cursor-pointer"
                     >
                       <Send className="w-3 h-3" />
                       <span>Request</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => openMentorModal(mentor)}
+                      className="px-3.5 py-1.5 rounded-lg bg-[#181B28] hover:bg-[#D4AF37] hover:text-[#090A0F] text-[#F5F2EB] text-xs font-bold uppercase tracking-wider border border-[#343A52] hover:border-transparent transition-all flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <UserCheck className="w-3 h-3" />
+                      <span>Connect</span>
                     </button>
                   )}
                 </div>
@@ -600,7 +685,7 @@ export const DiscoverView: React.FC = () => {
           </div>
           <h3 className="text-lg font-serif font-bold text-[#F5F2EB]">No mentors match your search yet.</h3>
           <p className="text-xs text-[#9E9A90] leading-relaxed">
-            Try adjusting your search keywords, broadening your industry filters, or sign up as a mentor to share your experience with other members.
+            Try adjusting your search keywords or broadening your industry filters.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button
@@ -608,13 +693,13 @@ export const DiscoverView: React.FC = () => {
               className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#181B28] hover:bg-[#232738] text-[#F5F2EB] text-xs uppercase tracking-wider font-semibold border border-[#343A52] transition-all cursor-pointer inline-flex items-center justify-center space-x-2"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Adjust filters</span>
+              <span>Reset filters</span>
             </button>
             <button
-              onClick={openPersonaSwitcher}
+              onClick={() => setActiveTab('profile')}
               className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] text-xs uppercase tracking-wider font-bold transition-all cursor-pointer inline-flex items-center justify-center space-x-2"
             >
-              <span>Become a Mentor</span>
+              <span>Manage Profile</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

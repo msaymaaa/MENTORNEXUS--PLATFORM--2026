@@ -69,6 +69,9 @@ export interface UserProfile {
   createdAt: string;
   isBanned?: boolean;
   banned?: boolean;
+  networkCount?: number;
+  networkIds?: string[];
+  blockedUserIds?: string[];
 }
 
 export interface MentorshipRequest {
@@ -86,8 +89,37 @@ export interface MentorshipRequest {
   message: string;
   goalsSummary?: string;
   responseNote?: string;
+  requestType?: 'mentorship' | 'networking';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NetworkingConnection {
+  id: string;
+  userId: string;
+  connectedUserId: string;
+  status: 'pending' | 'accepted' | 'declined';
+  connectedAt?: string;
+  createdAt?: string;
+  user?: UserProfile;
+  connectedUser?: UserProfile;
+}
+
+export interface MentorshipMeeting {
+  id: string;
+  connectionId: string;
+  title: string;
+  date: string;
+  time: string;
+  timeZone?: string;
+  durationMinutes?: number;
+  notes?: string; // Agenda & prep notes
+  sessionNotes?: string[]; // Post-session discussion notes and takeaways
+  status: 'scheduled' | 'completed' | 'cancelled';
+  meetingUrl?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface MentorshipConnection {
@@ -109,6 +141,7 @@ export interface MentorshipConnection {
   nextMeetingDate?: string;
   status: 'active' | 'completed' | 'paused';
   notes?: string[];
+  meetings?: MentorshipMeeting[];
 }
 
 export interface ExperienceResource {
@@ -132,7 +165,7 @@ export interface AppNotification {
   userId: string;
   title: string;
   message: string;
-  type: 'request_received' | 'request_accepted' | 'request_declined' | 'goal_milestone' | 'verification' | 'resource_published' | 'system';
+  type: 'request_received' | 'request_accepted' | 'request_declined' | 'message' | 'goal_milestone' | 'verification' | 'resource_published' | 'system';
   read: boolean;
   linkTab?: string; // e.g. 'requests', 'connections', 'goals', 'library', 'admin'
   linkId?: string;
@@ -152,6 +185,21 @@ export interface AdminStats {
   totalResources: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  connectionId: string;
+  senderId: string;
+  senderName?: string;
+  senderAvatar?: string;
+  content: string;
+  messageType: 'text' | 'voice' | 'file';
+  voiceUrl?: string;
+  replyToId?: string;
+  replyToContent?: string;
+  replyToSenderName?: string;
+  createdAt: string;
+}
+
 export interface AIMatchResult {
   mentorId: string;
   matchScore: number; // 0 - 100
@@ -159,3 +207,4 @@ export interface AIMatchResult {
   suggestedFocusAreas: string[];
   fitSummary: string;
 }
+

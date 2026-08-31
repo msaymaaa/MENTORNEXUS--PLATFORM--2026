@@ -1,0 +1,202 @@
+{
+  "users": [],
+  "requests": [],
+  "connections": [],
+  "goals": [],
+  "resources": [
+    {
+      "id": "res_001",
+      "title": "How to Get Maximum ROI from Your Mentorship Relationships",
+      "summary": "A definitive guide on setting agendas, asking powerful questions, and transforming periodic 1:1 sessions into lifelong professional catalysts.",
+      "content": "## The Art of Active Mentorship\n\nMentorship is not passive listening; it is an active, intentional collaboration. The most successful mentees treat every mentorship session like an executive briefing.\n\n### 1. The 24-Hour Pre-Flight Memo\nAlways send your mentor a concise 3-bullet agenda at least 24 hours prior:\n- **Current Progress:** What concrete action you took since the last session.\n- **Specific Obstacle:** The exact decision or blocker you need their perspective on (with options you are already considering).\n- **Desired Outcome:** What clarity you hope to walk away with today.\n\n### 2. Focus on Decisions, Not Just Information\nDo not ask questions that can be Googled. Instead of \"What is Docker?\", ask \"We are choosing between ECS Fargate and EKS for a 5-person startup team with $10k monthly cloud budget; what operational pitfalls did you encounter at this stage?\"\n\n### 3. Close the Feedback Loop\nWithin 48 hours of every call, send a brief thank-you note summarizing the action items you committed to and when you will execute them. Mentors love seeing their advice translated into tangible impact!",
+      "category": "Mentorship Stories",
+      "authorId": "system",
+      "authorName": "MentorNexus Staff",
+      "authorTitle": "Editorial Board",
+      "authorAvatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80",
+      "readTimeMinutes": 5,
+      "tags": [
+        "Mentorship",
+        "Career Strategy",
+        "1:1 Meetings",
+        "Professional Growth"
+      ],
+      "featured": true,
+      "publishedAt": "2026-01-20T10:00:00.000Z"
+    },
+    {
+      "id": "res_002",
+      "title": "Transitioning from Individual Contributor to Technical Lead",
+      "summary": "Navigating the mental shift from writing code to multiplying engineering leverage, building consensus, and protecting team focus.",
+      "content": "## The Multiplier Mindset\n\nWhen you become a Senior Engineer or Tech Lead, your value changes from how many pull requests you author to how effectively you elevate the entire engineering unit.\n\n### Core Shifts:\n1. **From Solving to Framing:** Your job is no longer to write the cleverest code; it is to define problems so clearly that any engineer on your team can solve them cleanly.\n2. **Architecture as Trade-Offs:** Every architectural choice is a compromise between velocity, maintainability, and cognitive load. Learn to articulate why you rejected alternative paths in your RFCs.\n3. **Sponsorship and Visibility:** Deliberately assign stretch projects to junior teammates and praise their contributions in cross-functional forums.",
+      "category": "Leadership",
+      "authorId": "system",
+      "authorName": "MentorNexus Staff",
+      "authorTitle": "Editorial Board",
+      "authorAvatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=300&auto=format&fit=crop&q=80",
+      "readTimeMinutes": 6,
+      "tags": [
+        "Tech Lead",
+        "Leadership",
+        "Career Progression",
+        "Engineering Culture"
+      ],
+      "featured": true,
+      "publishedAt": "2026-02-05T14:30:00.000Z"
+    },
+    {
+      "id": "res_003",
+      "title": "De-Mystifying Product Management: What Senior PMs Actually Look For in APMs",
+      "summary": "Practical advice on product sense, metric intuition, and customer empathy for candidates breaking into product management.",
+      "content": "## What Truly Sets Great Product Candidates Apart\n\nThe best product managers do not just manage backlogs—they deeply understand user pain points, business economics, and organizational dynamics.\n\n### Key Pillars:\n1. **Product Sense:** Can you identify why a beloved product succeeds and articulate a structured critique of what you would improve?\n2. **First-Principles Thinking:** When given an ambiguous problem like \"Improve onboarding conversion by 20%\", do you immediately suggest features or do you dissect user drop-off funnels first?\n3. **Influence Without Authority:** How you build genuine rapport with engineers and designers determines your product's momentum.",
+      "category": "Career Advice",
+      "authorId": "system",
+      "authorName": "MentorNexus Staff",
+      "authorTitle": "Editorial Board",
+      "authorAvatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80",
+      "readTimeMinutes": 7,
+      "tags": [
+        "Product Management",
+        "APM",
+        "Interviews",
+        "Career Transition"
+      ],
+      "featured": false,
+      "publishedAt": "2026-02-18T09:15:00.000Z"
+    },
+    {
+      "id": "res_004",
+      "title": "Building a Standout UX Design Portfolio That Gets You Hired",
+      "summary": "Why hiring managers skip pretty UI screens and how to structure case studies around messy problem-solving, user research insights, and measurable outcomes.",
+      "content": "## Case Studies Over Visual Dribbble Shots\n\nHiring managers want to see how you think under real-world constraints, not hypothetical redesigns of popular apps without data.\n\n### Portfolio Structure Formula:\n1. **The Context & Problem:** Who were the users, what was the business goal, and what were the technical constraints?\n2. **The Research & Discovery:** What surprising insight did user interviews reveal that changed your original hypothesis?\n3. **The Iteration & Validation:** Show rough sketches, discarded prototypes, and explain why you pivoted.\n4. **The Impact:** Quantifiable metrics (e.g., 34% reduction in checkout drop-off) and lessons learned for future iterations.",
+      "category": "Technical Growth",
+      "authorId": "system",
+      "authorName": "MentorNexus Staff",
+      "authorTitle": "Editorial Board",
+      "authorAvatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=300&auto=format&fit=crop&q=80",
+      "readTimeMinutes": 5,
+      "tags": [
+        "UI/UX",
+        "Portfolios",
+        "Design Strategy",
+        "Case Studies"
+      ],
+      "featured": false,
+      "publishedAt": "2026-02-26T11:45:00.000Z"
+    }
+  ],
+  "notifications": [
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "1:1 Session Scheduled! 📅",
+      "message": "LUQMAN scheduled \"iiiiiii\" for 2026-09-01 at 10:00 AM PST.",
+      "type": "system",
+      "linkTab": "connections",
+      "id": "notif_1787902965699_ybhuf",
+      "read": false,
+      "createdAt": "2026-08-28T07:42:45.699Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "1:1 Session Scheduled! 📅",
+      "message": "LUQMAN scheduled \"ss\" for 2026-08-12 at 10:00 AM PST.",
+      "type": "system",
+      "linkTab": "connections",
+      "id": "notif_1787902279732_39ss7",
+      "read": true,
+      "createdAt": "2026-08-28T07:31:19.732Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "1:1 Session Scheduled! 📅",
+      "message": "LUQMAN scheduled \"sssssssssss\" for 2026-08-30 at 10:00 AM PST.",
+      "type": "system",
+      "linkTab": "connections",
+      "id": "notif_1787902266472_4eg5a",
+      "read": true,
+      "createdAt": "2026-08-28T07:31:06.472Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "1:1 Session Scheduled! 📅",
+      "message": "LUQMAN scheduled \"dddddd\" for 2026-08-31 at 10:00 AM PST.",
+      "type": "system",
+      "linkTab": "connections",
+      "id": "notif_1787902245323_0mfxg",
+      "read": true,
+      "createdAt": "2026-08-28T07:30:45.323Z"
+    },
+    {
+      "userId": "75008f4b-7ae3-42c2-852d-31f47ce965f1",
+      "title": "New message from BURAQ",
+      "message": "alr but i cant find link here!",
+      "type": "message",
+      "linkTab": "connections",
+      "id": "notif_1787902167492_9mpkw",
+      "read": false,
+      "createdAt": "2026-08-28T07:29:27.492Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "1:1 Session Scheduled! 📅",
+      "message": "LUQMAN scheduled \"system mock design\" for 2026-08-29 at 12:00 AM PST.",
+      "type": "system",
+      "linkTab": "connections",
+      "id": "notif_1787902027334_eeqxn",
+      "read": true,
+      "createdAt": "2026-08-28T07:27:07.334Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "New message from LUQMAN",
+      "message": "lets have a meeting today",
+      "type": "message",
+      "linkTab": "connections",
+      "id": "notif_1787902000924_b5be8",
+      "read": true,
+      "createdAt": "2026-08-28T07:26:40.924Z"
+    },
+    {
+      "userId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "title": "New message from LUQMAN",
+      "message": "hellow whats goingon?",
+      "type": "message",
+      "linkTab": "connections",
+      "id": "notif_1787901990217_nzq82",
+      "read": true,
+      "createdAt": "2026-08-28T07:26:30.217Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg_1787901987699_nsdbz",
+      "connectionId": "conn_8fdfa240-103a-4a45-ab54-28aa6c00f9e2",
+      "senderId": "75008f4b-7ae3-42c2-852d-31f47ce965f1",
+      "senderName": "LUQMAN",
+      "senderAvatar": "",
+      "content": "hellow whats goingon?",
+      "messageType": "text",
+      "createdAt": "2026-08-28T07:26:27.699Z"
+    },
+    {
+      "id": "msg_1787901998855_ylyou",
+      "connectionId": "conn_8fdfa240-103a-4a45-ab54-28aa6c00f9e2",
+      "senderId": "75008f4b-7ae3-42c2-852d-31f47ce965f1",
+      "senderName": "LUQMAN",
+      "senderAvatar": "",
+      "content": "lets have a meeting today",
+      "messageType": "text",
+      "createdAt": "2026-08-28T07:26:38.855Z"
+    },
+    {
+      "id": "msg_1787902165337_2vuut",
+      "connectionId": "conn_8fdfa240-103a-4a45-ab54-28aa6c00f9e2",
+      "senderId": "a44ae5e7-3717-4566-9aff-8054b525bbaf",
+      "senderName": "BURAQ",
+      "senderAvatar": "",
+      "content": "alr but i cant find link here!",
+      "messageType": "text",
+      "createdAt": "2026-08-28T07:29:25.337Z"
+    }
+  ]
+}

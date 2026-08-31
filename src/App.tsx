@@ -3,7 +3,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
-import { PersonaSwitcherModal } from './components/PersonaSwitcherModal';
 import { AIAdvisorModal } from './components/AIAdvisorModal';
 import { AuthModal, AuthViewMode } from './components/AuthModal';
 import { MentorProfileModal } from './views/MentorProfileModal';
@@ -14,6 +13,7 @@ import { RequestsView } from './views/RequestsView';
 import { ConnectionsView } from './views/ConnectionsView';
 import { GoalsView } from './views/GoalsView';
 import { ExperienceLibraryView } from './views/ExperienceLibraryView';
+import { NetworkView } from './views/NetworkView';
 import { NotificationsView } from './views/NotificationsView';
 import { ProfileView } from './views/ProfileView';
 import { AdminView } from './views/AdminView';
@@ -21,16 +21,19 @@ import { Sparkles, Loader2 } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
-  const { activeTab, setActiveTab, openAdvisorModal } = useApp();
+  const { 
+    activeTab, 
+    setActiveTab, 
+    openAdvisorModal,
+    isAuthModalOpen,
+    authModalMode,
+    authModalRole,
+    openAuthModal,
+    closeAuthModal,
+  } = useApp();
 
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthViewMode>('choice');
-  const [authInitialRole, setAuthInitialRole] = useState<'student' | 'mentor'>('student');
-
-  const handleOpenAuth = (mode: AuthViewMode = 'choice', role: 'student' | 'mentor' = 'student') => {
-    setAuthMode(mode);
-    setAuthInitialRole(role);
-    setIsAuthOpen(true);
+  const handleOpenAuth = (mode: AuthViewMode = 'choice', role: 'student' | 'early_career' | 'mentor' = 'student') => {
+    openAuthModal(mode, role);
   };
 
   if (isLoading) {
@@ -53,7 +56,7 @@ const MainLayout: React.FC = () => {
         return (
           <LandingView 
             onOpenAuth={handleOpenAuth} 
-            onExploreCategory={(cat) => {
+            onExploreCategory={() => {
               setActiveTab('discover');
             }} 
           />
@@ -66,6 +69,8 @@ const MainLayout: React.FC = () => {
         return <RequestsView />;
       case 'connections':
         return <ConnectionsView />;
+      case 'network':
+        return <NetworkView />;
       case 'goals':
         return <GoalsView />;
       case 'library':
@@ -98,12 +103,11 @@ const MainLayout: React.FC = () => {
       {/* Global Modals & Notifications */}
       <MentorProfileModal />
       <AIAdvisorModal />
-      <PersonaSwitcherModal />
       <AuthModal 
-        isOpen={isAuthOpen} 
-        onClose={() => setIsAuthOpen(false)} 
-        initialMode={authMode} 
-        initialRole={authInitialRole} 
+        isOpen={isAuthModalOpen} 
+        onClose={closeAuthModal} 
+        initialMode={authModalMode} 
+        initialRole={authModalRole} 
       />
       <ToastContainer />
 

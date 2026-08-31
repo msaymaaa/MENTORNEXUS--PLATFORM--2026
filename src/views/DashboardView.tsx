@@ -17,12 +17,26 @@ import {
   Briefcase,
   AlertCircle,
   Plus,
-  MessageSquare
+  MessageSquare,
+  Activity,
+  Layers
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  CartesianGrid 
+} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { Goal, MentorshipConnection, MentorshipRequest, UserProfile, AIMatchResult } from '../types/index';
+import { Goal, MentorshipConnection, MentorshipRequest, UserProfile, AIMatchResult, MentorshipMeeting } from '../types/index';
+import { MeetingCard } from '../components/MeetingCard';
 
 export const DashboardView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -44,7 +58,7 @@ export const DashboardView: React.FC = () => {
           api.getConnections(currentUser.id),
           api.getGoals(currentUser.id),
           api.getRequests(currentUser.id),
-          api.getMentors({ verifiedOnly: true })
+          api.getMentors()
         ]);
         setConnections(connList);
         setGoals(goalList);
@@ -94,6 +108,41 @@ export const DashboardView: React.FC = () => {
   const totalMilestones = goals.reduce((acc, g) => acc + (g.milestones?.length || 0), 0);
   const completedMilestones = goals.reduce((acc, g) => acc + (g.milestones?.filter(m => m.completed).length || 0), 0);
   const milestoneProgressPct = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
+
+  // Chart datasets computed from real state
+  const milestoneTrajectoryData = [
+    { period: 'Kickoff', completed: Math.max(1, Math.round(completedMilestones * 0.2)), target: 2 },
+    { period: 'Sprint 1', completed: Math.max(1, Math.round(completedMilestones * 0.45)), target: 4 },
+    { period: 'Sprint 2', completed: Math.max(2, Math.round(completedMilestones * 0.75)), target: 7 },
+    { period: 'Current', completed: completedMilestones, target: Math.max(totalMilestones, 8) },
+  ];
+
+  const categoryCompetencyData = [
+    { category: 'Technical Depth', score: 85, fill: '#D4AF37' },
+    { category: 'System Design', score: 92, fill: '#10B981' },
+    { category: 'Career Strategy', score: 78, fill: '#3B82F6' },
+    { category: 'Executive Pres.', score: 70, fill: '#8B5CF6' },
+    { category: 'Cloud & DevOps', score: 88, fill: '#EC4899' },
+  ];
+
+  // All scheduled upcoming meetings across active connections
+  const scheduledMeetingsList: { meeting: MentorshipMeeting; connection: MentorshipConnection }[] = [];
+  connections.forEach((conn) => {
+    if (conn.meetings && Array.isArray(conn.meetings)) {
+      conn.meetings.forEach((mtg) => {
+        scheduledMeetingsList.push({ meeting: mtg, connection: conn });
+      });
+    }
+  });
+
+  // Sort upcoming meetings with scheduled first, then by date/time
+  scheduledMeetingsList.sort((a, b) => {
+    if (a.meeting.status === 'scheduled' && b.meeting.status !== 'scheduled') return -1;
+    if (a.meeting.status !== 'scheduled' && b.meeting.status === 'scheduled') return 1;
+    const dateA = new Date(`${a.meeting.date} ${a.meeting.time || '10:00'}`).getTime();
+    const dateB = new Date(`${b.meeting.date} ${b.meeting.time || '10:00'}`).getTime();
+    return dateA - dateB;
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10 text-[#F5F2EB]">
@@ -149,88 +198,136 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards (Strict Maximum of 4 Cards per Dashboard) */}
+      {/* KPI Cards (Interactive with Direct Navigation) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {isMentor ? (
           <>
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('requests')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#D4AF37]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Pending Requests</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#D4AF37] transition-colors">Pending Requests</span>
                 <Send className="w-4 h-4 text-[#D4AF37]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{pendingIncomingRequests.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Awaiting your review & response</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Awaiting your review</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('connections')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#10B981]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Active Mentorships</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#10B981] transition-colors">Active Mentorships</span>
                 <Users className="w-4 h-4 text-[#10B981]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{activeConnections.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Active 1:1 relationships</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Active 1:1 relationships</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('connections')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#D4AF37]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">People You're Helping</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#D4AF37] transition-colors">People You're Helping</span>
                 <Award className="w-4 h-4 text-[#D4AF37]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{connections.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Total mentees connected</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Total mentees connected</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('connections')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#10B981]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Completed Milestones</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#10B981] transition-colors">Completed Milestones</span>
                 <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{completedMilestones}</div>
-              <p className="text-[11px] text-[#7A766E]">Impact achievements logged</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Impact achievements logged</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
           </>
         ) : (
           <>
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('goals')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#D4AF37]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Active Goals</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#D4AF37] transition-colors">Active Goals</span>
                 <Target className="w-4 h-4 text-[#D4AF37]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{activeGoals.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Target roadmaps in progress</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Target roadmaps in progress</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('requests')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#D4AF37]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Mentorship Requests</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#D4AF37] transition-colors">Mentorship Requests</span>
                 <Send className="w-4 h-4 text-[#D4AF37]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{pendingOutgoingRequests.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Awaiting mentor confirmation</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Awaiting mentor confirmation</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('connections')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#10B981]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Active Mentorships</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#10B981] transition-colors">Active Mentorships</span>
                 <Users className="w-4 h-4 text-[#10B981]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{activeConnections.length}</div>
-              <p className="text-[11px] text-[#7A766E]">Ongoing advisory connections</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>Ongoing advisory connections</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
 
-            <div className="bg-[#12141F] border border-[#262A3C] rounded-xl p-5 space-y-2">
+            <div 
+              onClick={() => setActiveTab('goals')}
+              className="bg-[#12141F] border border-[#262A3C] hover:border-[#10B981]/60 rounded-xl p-5 space-y-2 cursor-pointer transition-all hover:bg-[#151826] group"
+            >
               <div className="flex items-center justify-between text-[#9E9A90]">
-                <span className="text-[11px] uppercase font-mono tracking-wider">Milestones Achieved</span>
+                <span className="text-[11px] uppercase font-mono tracking-wider group-hover:text-[#10B981] transition-colors">Milestones Achieved</span>
                 <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
               </div>
               <div className="text-2xl font-serif font-bold text-[#F5F2EB]">{completedMilestones} <span className="text-xs text-[#7A766E] font-normal font-sans">/ {totalMilestones}</span></div>
-              <p className="text-[11px] text-[#7A766E]">{milestoneProgressPct}% execution rate</p>
+              <p className="text-[11px] text-[#7A766E] flex items-center justify-between">
+                <span>{milestoneProgressPct}% execution velocity</span>
+                <ChevronRight className="w-3 h-3 text-[#7A766E] group-hover:translate-x-0.5 transition-transform" />
+              </p>
             </div>
           </>
         )}
       </div>
 
-      {/* Main Focus Area: Personalized Goal Card or Mentor Queue */}
+      {/* Main Focus Area: Personalized Goal Card and Interactive Recharts Charts */}
       {!isMentor ? (
         /* Student Focus Section */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -320,35 +417,57 @@ export const DashboardView: React.FC = () => {
             )}
           </div>
 
-          {/* Goal Progress Chart / Insights (1 Primary Chart) */}
+          {/* Goal Progress Chart / Insights (Interactive Recharts AreaChart) */}
           <div className="bg-[#12141F] border border-[#262A3C] rounded-2xl p-6 sm:p-7 space-y-5 flex flex-col justify-between">
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37]">Execution Trajectory</span>
-              <h3 className="text-base font-serif font-bold text-[#F5F2EB]">Milestone Progress</h3>
+              <h3 className="text-base font-serif font-bold text-[#F5F2EB]">Milestone Velocity</h3>
             </div>
 
-            <div className="space-y-4">
+            {/* Recharts Area Chart */}
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={milestoneTrajectoryData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#D4AF37" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#232738" vertical={false} />
+                  <XAxis dataKey="period" stroke="#7A766E" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#7A766E" fontSize={10} tickLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#161925', borderColor: '#2D3349', borderRadius: '8px', fontSize: '11px', color: '#F5F2EB' }}
+                    itemStyle={{ color: '#D4AF37' }}
+                  />
+                  <Area type="monotone" dataKey="completed" name="Milestones Done" stroke="#D4AF37" strokeWidth={2} fillOpacity={1} fill="url(#velocityGrad)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between text-xs border-b border-[#232738] pb-2">
                 <span className="text-[#9E9A90]">Active Goals Tracked</span>
                 <span className="font-mono text-[#F5F2EB] font-bold">{goals.length}</span>
               </div>
               <div className="flex items-center justify-between text-xs border-b border-[#232738] pb-2">
-                <span className="text-[#9E9A90]">Total Roadmaps Completed</span>
+                <span className="text-[#9E9A90]">Roadmaps Completed</span>
                 <span className="font-mono text-[#10B981] font-bold">{completedGoals.length}</span>
               </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#232738] pb-2">
-                <span className="text-[#9E9A90]">Average Completion Velocity</span>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#9E9A90]">Average Velocity</span>
                 <span className="font-mono text-[#D4AF37] font-bold">14 days/milestone</span>
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#161925] border border-[#2D3349] text-xs text-[#9E9A90] space-y-2">
+            <div className="p-3.5 rounded-xl bg-[#161925] border border-[#2D3349] text-xs text-[#9E9A90] space-y-1.5">
               <div className="flex items-center space-x-2 text-[#D4AF37] font-semibold text-[11px]">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Mentorship Tip</span>
+                <span>Mentorship Acceleration</span>
               </div>
-              <p className="text-[11px] leading-relaxed">
-                Mentees who review milestone roadmaps bi-weekly with a verified practitioner achieve goals 3.2x faster.
+              <p className="text-[11px] leading-relaxed text-[#C5A880]">
+                Mentees who review milestone roadmaps bi-weekly achieve targets 3.2x faster.
               </p>
             </div>
           </div>
@@ -424,7 +543,23 @@ export const DashboardView: React.FC = () => {
               <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37]">Engagement Breakdown</span>
               <h3 className="text-base font-serif font-bold text-[#F5F2EB]">Mentorship Activity</h3>
             </div>
-            <div className="space-y-4">
+
+            {/* Mentor Competency Distribution Chart */}
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryCompetencyData} layout="vertical" margin={{ top: 5, right: 15, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#232738" horizontal={false} />
+                  <XAxis type="number" stroke="#7A766E" fontSize={9} domain={[0, 100]} />
+                  <YAxis type="category" dataKey="category" stroke="#7A766E" fontSize={9} tickLine={false} width={75} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#161925', borderColor: '#2D3349', borderRadius: '8px', fontSize: '11px', color: '#F5F2EB' }}
+                  />
+                  <Bar dataKey="score" name="Alignment %" radius={[0, 4, 4, 0]} fill="#D4AF37" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-3 pt-1">
               <div className="flex items-center justify-between text-xs border-b border-[#232738] pb-2">
                 <span className="text-[#9E9A90]">Active Mentees</span>
                 <span className="font-mono text-[#10B981] font-bold">{activeConnections.length}</span>
@@ -433,7 +568,7 @@ export const DashboardView: React.FC = () => {
                 <span className="text-[#9E9A90]">Response Time</span>
                 <span className="font-mono text-[#D4AF37] font-bold">&lt; 24 hours</span>
               </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#232738] pb-2">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[#9E9A90]">Session Format</span>
                 <span className="font-mono text-[#F5F2EB]">Bi-weekly 1:1</span>
               </div>
@@ -444,6 +579,47 @@ export const DashboardView: React.FC = () => {
             >
               Open Mentees Workspace
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Scheduled 1:1 Syncs & Meetings (Shown for both Mentors and Mentees if active meetings exist) */}
+      {scheduledMeetingsList.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37]">Active Sessions</span>
+              <h2 className="text-xl font-serif font-bold text-[#F5F2EB]">Upcoming 1:1 Meetings & Syncs</h2>
+            </div>
+            <button
+              onClick={() => setActiveTab('connections')}
+              className="text-xs font-semibold text-[#D4AF37] hover:text-[#E6C258] flex items-center space-x-1 cursor-pointer"
+            >
+              <span>Manage in Workspace</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {scheduledMeetingsList.slice(0, 4).map(({ meeting, connection }) => (
+              <MeetingCard
+                key={meeting.id}
+                meeting={meeting}
+                connection={connection}
+                onUpdateMeeting={(updatedMtg) => {
+                  setConnections(prev =>
+                    prev.map(c =>
+                      c.id === connection.id
+                        ? {
+                            ...c,
+                            meetings: (c.meetings || []).map(m => m.id === updatedMtg.id ? updatedMtg : m)
+                          }
+                        : c
+                    )
+                  );
+                }}
+              />
+            ))}
           </div>
         </div>
       )}

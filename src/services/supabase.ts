@@ -1,15 +1,47 @@
 /// <reference types="vite/client" />
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl: string = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const supabaseAnonKey: string = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+export function normalizeSupabaseConfig(rawUrl?: string, rawKey?: string) {
+  let url = (rawUrl || '').trim();
+  let key = (rawKey || '').trim();
 
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl.startsWith('https://') &&
-  !supabaseUrl.includes('placeholder')
-);
+  // If Key contains http(s):// and URL does not, they were inverted in environment settings
+  if (
+    (key.startsWith('https://') || key.startsWith('http://')) &&
+    (!url.startsWith('https://') && !url.startsWith('http://'))
+  ) {
+    const temp = url;
+    url = key;
+    key = temp;
+  }
+
+  // Strip trailing /rest/v1 or trailing slashes so Supabase SDK builds correct endpoints
+  url = url.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+
+  const isConfigured = Boolean(
+    url && 
+    key && 
+    (url.startsWith('https://') || url.startsWith('http://')) &&
+    !url.includes('placeholder')
+  );
+
+  return { url, key, isConfigured };
+}
+
+const rawEnvUrl: string = 
+  (import.meta as any).env?.VITE_SUPABASE_URL || 
+  (import.meta as any).env?.SUPABASE_URL || 
+  '';
+
+const rawEnvKey: string = 
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 
+  (import.meta as any).env?.SUPABASE_ANON_KEY || 
+  '';
+
+const { url: supabaseUrl, key: supabaseAnonKey, isConfigured } = normalizeSupabaseConfig(rawEnvUrl, rawEnvKey);
+
+export const isSupabaseConfigured = isConfigured;
+export const configuredSupabaseUrl = supabaseUrl;
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -20,6 +52,8 @@ export const getSupabaseClient = (): SupabaseClient | null => {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       }
     });
   }
@@ -27,3 +61,5 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 };
 
 export const supabase = isSupabaseConfigured ? getSupabaseClient() : null;
+
+
