@@ -13,6 +13,12 @@ import {
 } from '../types/index';
 import { supabaseDb, getCachedMeetings, setCachedMeetings } from './supabaseDb';
 import { isSupabaseConfigured, getSupabaseClient } from './supabase';
+import { 
+  generateMentorMatchesClient, 
+  generateGoalBreakdownClient, 
+  polishMentorshipRequestClient, 
+  getCareerAdvisorResponseClient 
+} from './clientGemini';
 
 const API_BASE = '/api';
 
@@ -898,84 +904,52 @@ export const api = {
     return { success: true };
   },
 
-  // Notifications (from Supabase public.notifications)
+  // Notifications (direct client-side Supabase JS)
   async createNotification(notif: Partial<AppNotification>): Promise<AppNotification | null> {
-    if (isSupabaseConfigured) {
-      return await supabaseDb.createNotification(notif);
-    }
-    const res = await fetch(`${API_BASE}/notifications`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(notif),
-    }).catch(() => null);
-    if (!res || !res.ok) return null;
-    return res.json();
+    return await supabaseDb.createNotification(notif);
   },
 
   async getNotifications(userId?: string): Promise<AppNotification[]> {
-    if (isSupabaseConfigured) {
-      if (!userId) return [];
-      return await supabaseDb.getNotifications(userId);
+    let targetUserId = userId;
+    if (!targetUserId) {
+      const user = await api.getCurrentUser();
+      targetUserId = user?.id;
     }
-
-    const url = userId ? `${API_BASE}/notifications?userId=${encodeURIComponent(userId)}` : `${API_BASE}/notifications`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch notifications');
-    return res.json();
+    if (!targetUserId) return [];
+    return await supabaseDb.getNotifications(targetUserId);
   },
 
   async markNotificationRead(id: string): Promise<{ success: boolean }> {
-    if (isSupabaseConfigured) {
-      await supabaseDb.markNotificationRead(id);
-    }
-    const res = await fetch(`${API_BASE}/notifications/${id}/read`, {
-      method: 'PATCH',
-    }).catch(() => null);
-
+    await supabaseDb.markNotificationRead(id);
     return { success: true };
   },
 
   async markAllNotificationsRead(userId?: string): Promise<{ success: boolean }> {
-    if (isSupabaseConfigured && userId) {
-      await supabaseDb.markAllNotificationsRead(userId);
+    let targetUserId = userId;
+    if (!targetUserId) {
+      const user = await api.getCurrentUser();
+      targetUserId = user?.id;
     }
-    const res = await fetch(`${API_BASE}/notifications/read-all`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    }).catch(() => null);
-
+    if (targetUserId) {
+      await supabaseDb.markAllNotificationsRead(targetUserId);
+    }
     return { success: true };
   },
 
   async deleteNotification(id: string): Promise<{ success: boolean }> {
-    if (isSupabaseConfigured) {
-      await supabaseDb.deleteNotification(id);
-    }
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/notifications/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: {
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-    }).catch(() => null);
-
+    await supabaseDb.deleteNotification(id);
     return { success: true };
   },
 
   async clearAllNotifications(userId?: string): Promise<{ success: boolean }> {
-    if (isSupabaseConfigured && userId) {
-      await supabaseDb.clearAllNotifications(userId);
+    let targetUserId = userId;
+    if (!targetUserId) {
+      const user = await api.getCurrentUser();
+      targetUserId = user?.id;
     }
-    const token = await api.getAuthToken();
-    const url = userId ? `${API_BASE}/notifications?userId=${encodeURIComponent(userId)}` : `${API_BASE}/notifications`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-    }).catch(() => null);
-
+    if (targetUserId) {
+      await supabaseDb.clearAllNotifications(targetUserId);
+    }
     return { success: true };
   },
 
@@ -983,10 +957,7 @@ export const api = {
     userId: string,
     onNotification: (notif: AppNotification) => void
   ): () => void {
-    if (isSupabaseConfigured) {
-      return supabaseDb.subscribeToNotifications(userId, onNotification);
-    }
-    return () => {};
+    return supabaseDb.subscribeToNotifications(userId, onNotification);
   },
 
   // Admin
@@ -1022,35 +993,35 @@ export const api = {
     return res.json();
   },
 
-  // AI
+  // AI Mentorship & Advisory (Client-side @google/generative-ai & Supabase JS)
   async getAIMatches(): Promise<AIMatchResult[]> {
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/ai/match-mentors`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-    });
-    if (!res.ok) throw new Error('Failed to get AI mentor matches');
-    return res.json();
+    try {
+      const currentUser = await api.getCurrentUser();
+      if (!currentUser) return [];
+
+      const [goals, mentors] = await Promise.all([
+        api.getGoals(currentUser.id),
+        api.getMentors(),
+      ]);
+
+      const availableMentors = mentors.filter(m => m.id !== currentUser.id && !m.isBanned);
+      return await generateMentorMatchesClient(currentUser, goals, availableMentors);
+    } catch (err) {
+      console.warn('Error calculating AI mentor matches client-side:', err);
+      return [];
+    }
   },
 
   async breakdownGoalAI(payload: { title: string; description?: string; category?: string; targetDate?: string }): Promise<{
     milestones: { title: string; dueDate?: string }[];
     recommendations: string[];
   }> {
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/ai/breakdown-goal`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('Failed to generate goal breakdown');
-    return res.json();
+    return await generateGoalBreakdownClient(
+      payload.title,
+      payload.description,
+      payload.category,
+      payload.targetDate
+    );
   },
 
   async generateGoalMilestonesAI(params: string | { title: string; category?: string; description?: string }, category?: string): Promise<{
@@ -1067,31 +1038,44 @@ export const api = {
     polishedMessage: string;
     highlights: string[];
   }> {
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/ai/polish-request`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('Failed to polish request message');
-    return res.json();
+    try {
+      const currentUser = await api.getCurrentUser();
+      const mentors = await api.getMentors();
+      const mentor = mentors.find(m => m.id === payload.mentorId) || (await api.getUserById(payload.mentorId));
+
+      if (!currentUser || !mentor) {
+        return {
+          polishedMessage: payload.draftMessage || 'I would like to request mentorship to help guide my professional development.',
+          highlights: ['Clear and direct request', 'Focus on professional growth']
+        };
+      }
+
+      return await polishMentorshipRequestClient(
+        currentUser,
+        mentor,
+        payload.draftMessage,
+        payload.goalsSummary
+      );
+    } catch (err) {
+      console.warn('Error polishing mentorship request client-side:', err);
+      return {
+        polishedMessage: payload.draftMessage || 'I would like to request mentorship to help guide my professional development.',
+        highlights: ['Clear and direct request', 'Focus on professional growth']
+      };
+    }
   },
 
   async getCareerAdviceAI(question: string): Promise<{ answer: string }> {
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/ai/career-advice`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ question }),
-    });
-    if (!res.ok) throw new Error('Failed to get career advice');
-    return res.json();
+    try {
+      const currentUser = await api.getCurrentUser();
+      const goals = currentUser ? await api.getGoals(currentUser.id) : [];
+      return await getCareerAdvisorResponseClient(question, currentUser, goals);
+    } catch (err) {
+      console.warn('Error fetching career advice client-side:', err);
+      return {
+        answer: 'I am here to help you navigate your mentorship and professional milestones. Please ask any specific question regarding career paths, 1:1 prep, or technical goals.'
+      };
+    }
   },
 };
 

@@ -2056,30 +2056,6 @@ export const supabaseDb = {
       }
     }
 
-    // Also fetch from server endpoint and merge
-    try {
-      const serverNotifs = await fetch(`/api/notifications?userId=${encodeURIComponent(userId)}`).then(r => r.ok ? r.json() : []).catch(() => []);
-      if (Array.isArray(serverNotifs)) {
-        for (const n of serverNotifs) {
-          const key = `${n.title}_${n.message}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            list.push({
-              id: String(n.id),
-              userId: n.userId,
-              title: n.title,
-              message: n.message,
-              type: n.type || 'system',
-              read: Boolean(n.read),
-              linkTab: n.linkTab,
-              linkId: n.linkId,
-              createdAt: n.createdAt || new Date().toISOString(),
-            });
-          }
-        }
-      }
-    } catch {}
-
     list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return list;
   },
@@ -2095,8 +2071,7 @@ export const supabaseDb = {
       .eq('id', id);
 
     if (error) {
-      console.error('Supabase markNotificationRead error:', error.message);
-      throw new Error(`Supabase notification update failed: ${error.message}`);
+      console.warn('Supabase markNotificationRead notice:', error.message);
     }
     return true;
   },
@@ -2112,8 +2087,7 @@ export const supabaseDb = {
       .eq('user_id', userId);
 
     if (error) {
-      console.error('Supabase markAllNotificationsRead error:', error.message);
-      throw new Error(`Supabase mark all notifications read failed: ${error.message}`);
+      console.warn('Supabase markAllNotificationsRead notice:', error.message);
     }
     return true;
   },
@@ -2160,22 +2134,6 @@ export const supabaseDb = {
     if (error) {
       console.warn('Supabase createNotification notice:', error.message);
     }
-
-    // Sync to server storage
-    try {
-      await fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: notification.userId,
-          title: notification.title,
-          message: notification.message,
-          type: notification.type || 'system',
-          linkTab: notification.linkTab,
-          linkId: notification.linkId,
-        }),
-      });
-    } catch {}
 
     return data ? mapNotificationFromSupabase(data) : {
       id: notification.id || `notif_${Date.now()}`,
@@ -2384,11 +2342,6 @@ export const supabaseDb = {
         }
       }
     }
-
-    try {
-      await fetch(`/api/notifications/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    } catch {}
-
     return true;
   },
 
@@ -2403,11 +2356,6 @@ export const supabaseDb = {
         }
       }
     }
-
-    try {
-      await fetch(`/api/notifications?userId=${encodeURIComponent(userId)}`, { method: 'DELETE' });
-    } catch {}
-
     return true;
   }
 };
