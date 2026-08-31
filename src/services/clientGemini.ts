@@ -15,7 +15,8 @@ function getGeminiClient(): GoogleGenerativeAI | null {
 }
 
 const MODELS_PRIORITY = [
-  'gemini-2.5-flash'
+  'gemini-1.5-flash',
+  'gemini-flash-latest'
 ];
 
 /**
