@@ -671,7 +671,7 @@ export const DashboardView: React.FC = () => {
                           <div>
                             <div className="flex items-center space-x-1.5">
                               <h4 className="text-sm font-serif font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors">{m.name}</h4>
-                              <Shield className="w-3.5 h-3.5 text-[#D4AF37]" title="Verified Mentor" />
+                              <span title="Verified Mentor"><Shield className="w-3.5 h-3.5 text-[#D4AF37]" /></span>
                             </div>
                             <p className="text-xs text-[#9E9A90] font-medium line-clamp-1">{m.title}</p>
                           </div>

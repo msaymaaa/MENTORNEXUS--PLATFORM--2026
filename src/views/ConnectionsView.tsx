@@ -115,7 +115,7 @@ export const ConnectionsView: React.FC = () => {
     const peerRoleLabel = isPeerMentor ? 'Mentor' : (peerProfile?.role === 'early_career' ? 'Early Career' : 'Learner');
 
     const explicitPeerTitle = isCurrentUserMentor ? conn.studentTitle : conn.mentorTitle;
-    const peerTitle = peerProfile?.title || peerProfile?.profession || explicitPeerTitle || (isPeerMentor ? 'Industry Mentor' : 'Aspiring Professional');
+    const peerTitle = peerProfile?.title || (peerProfile as any)?.profession || explicitPeerTitle || (isPeerMentor ? 'Industry Mentor' : 'Aspiring Professional');
 
     return {
       peerId,

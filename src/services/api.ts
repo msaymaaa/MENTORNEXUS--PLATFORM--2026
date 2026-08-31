@@ -1065,17 +1065,13 @@ export const api = {
     }
   },
 
-  async getCareerAdviceAI(question: string): Promise<{ answer: string }> {
-    try {
-      const currentUser = await api.getCurrentUser();
-      const goals = currentUser ? await api.getGoals(currentUser.id) : [];
-      return await getCareerAdvisorResponseClient(question, currentUser, goals);
-    } catch (err) {
-      console.warn('Error fetching career advice client-side:', err);
-      return {
-        answer: 'I am here to help you navigate your mentorship and professional milestones. Please ask any specific question regarding career paths, 1:1 prep, or technical goals.'
-      };
-    }
+  async getCareerAdviceAI(
+    question: string,
+    history?: { sender: 'user' | 'assistant' | 'model'; text: string }[]
+  ): Promise<{ answer: string }> {
+    const currentUser = await api.getCurrentUser();
+    const goals = currentUser ? await api.getGoals(currentUser.id) : [];
+    return await getCareerAdvisorResponseClient(question, currentUser, goals, history);
   },
 };
 

@@ -566,16 +566,16 @@ export const DiscoverView: React.FC = () => {
                           <h3 className="text-base font-serif font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors">{mentor.name}</h3>
                           {mentor.role === 'mentor' ? (
                             mentor.verificationStatus === 'verified' ? (
-                              <Shield className="w-3.5 h-3.5 text-[#D4AF37]" title="Verified Mentor" />
+                              <span title="Verified Mentor"><Shield className="w-3.5 h-3.5 text-[#D4AF37]" /></span>
                             ) : (
-                              <Award className="w-3.5 h-3.5 text-[#D4AF37]/70" title="Industry Mentor" />
+                              <span title="Industry Mentor"><Award className="w-3.5 h-3.5 text-[#D4AF37]/70" /></span>
                             )
                           ) : mentor.role === 'early_career' ? (
-                            <Briefcase className="w-3.5 h-3.5 text-emerald-400" title="Early-Career Member" />
+                            <span title="Early-Career Member"><Briefcase className="w-3.5 h-3.5 text-emerald-400" /></span>
                           ) : mentor.role === 'admin' ? (
-                            <Shield className="w-3.5 h-3.5 text-purple-400" title="Administrator" />
+                            <span title="Administrator"><Shield className="w-3.5 h-3.5 text-purple-400" /></span>
                           ) : (
-                            <GraduationCap className="w-3.5 h-3.5 text-blue-400" title="Learner / Student" />
+                            <span title="Learner / Student"><GraduationCap className="w-3.5 h-3.5 text-blue-400" /></span>
                           )}
                         </div>
                         <p className="text-xs text-[#9E9A90] font-medium line-clamp-1">{mentor.title}</p>

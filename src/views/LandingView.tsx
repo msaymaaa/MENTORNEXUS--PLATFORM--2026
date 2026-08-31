@@ -508,7 +508,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onOpenAuth, onExploreC
                       <div>
                         <div className="flex items-center space-x-1.5">
                           <h4 className="text-base font-serif font-bold text-[#F5F2EB]">{mentor.name}</h4>
-                          <Shield className="w-3.5 h-3.5 text-[#D4AF37]" title="Verified Practitioner" />
+                          <span title="Verified Practitioner"><Shield className="w-3.5 h-3.5 text-[#D4AF37]" /></span>
                         </div>
                         <p className="text-xs text-[#9E9A90] font-medium">{mentor.title}</p>
                       </div>

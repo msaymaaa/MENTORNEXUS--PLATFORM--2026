@@ -295,50 +295,138 @@ Return ONLY valid JSON (no markdown wrapping) in this structure:
   };
 }
 
+export interface ChatHistoryMessage {
+  sender: 'user' | 'assistant' | 'model';
+  text: string;
+}
+
 /**
- * 4. AI Career Advisor Chat (Client-Side)
+ * Formats conversation history into Gemini Content array for model.startChat()
+ */
+function formatHistoryForGemini(messages: ChatHistoryMessage[]): { role: 'user' | 'model'; parts: { text: string }[] }[] {
+  const formatted: { role: 'user' | 'model'; parts: { text: string }[] }[] = [];
+  let foundFirstUser = false;
+
+  for (const msg of messages) {
+    if (!msg.text || !msg.text.trim()) continue;
+
+    const role: 'user' | 'model' = msg.sender === 'user' ? 'user' : 'model';
+
+    // In Gemini API, history must begin with a user turn
+    if (!foundFirstUser) {
+      if (role === 'user') {
+        foundFirstUser = true;
+        formatted.push({ role: 'user', parts: [{ text: msg.text.trim() }] });
+      }
+      continue;
+    }
+
+    // Ensure strict alternation of user and model turns
+    const lastItem = formatted[formatted.length - 1];
+    if (lastItem && lastItem.role === role) {
+      lastItem.parts[0].text += `\n\n${msg.text.trim()}`;
+    } else {
+      formatted.push({ role, parts: [{ text: msg.text.trim() }] });
+    }
+  }
+
+  // The historical context in startChat must end with a model turn
+  // since the new user message is passed into chat.sendMessage()
+  while (formatted.length > 0 && formatted[formatted.length - 1].role === 'user') {
+    formatted.pop();
+  }
+
+  return formatted;
+}
+
+/**
+ * 4. AI Career Advisor Multi-Turn Chat (Client-Side)
+ * Uses model.startChat() with full conversation memory history.
  */
 export async function getCareerAdvisorResponseClient(
   question: string,
   user?: UserProfile | null,
-  goals: Goal[] = []
+  goals: Goal[] = [],
+  history: ChatHistoryMessage[] = []
 ): Promise<{ answer: string }> {
-  try {
-    const userContext = user ? `
-User Profile:
-- Name: ${user.name}
-- Role: ${user.role} (${user.title} at ${user.organization})
-- Skills: ${(user.skills || []).join(', ')}
-- Current Goals: ${goals.length > 0 ? goals.map(g => `${g.title} (${g.progress}% done)`).join('; ') : 'General career growth'}
-` : 'User is an ambitious professional seeking career and mentorship advice.';
-
-    const systemInstruction = 'You are MentorNexus AI, an experienced, pragmatic career and mentorship advisor. Provide actionable, structured, empathetic, and direct professional advice in clean markdown format (under 250 words). Include 1 specific action they can take today and 1 topic to discuss with their mentor in their next 1:1.';
-
-    const prompt = `${userContext}
-
-User's Question:
-"${question}"
-
-Provide actionable career and mentorship guidance:`;
-
-    const raw = await callClientGeminiWithResilience(prompt, 'getCareerAdvisorResponseClient', systemInstruction);
-    if (raw) {
-      return { answer: raw };
-    }
-  } catch (error) {
-    console.warn('[Client Gemini] getCareerAdvisorResponse fallback used:', error);
+  const genAI = getGeminiClient();
+  if (!genAI) {
+    throw new Error(
+      'Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your environment or Settings.'
+    );
   }
 
-  const roleTitle = user?.title || 'professional';
-  const goalAnchor = goals[0]?.title ? `"${goals[0].title}"` : 'your active career milestones';
+  const userContext = user
+    ? `
+User Profile:
+- Name: ${user.name}
+- Role: ${user.role} (${user.title || 'Professional'} at ${user.organization || 'Organization'})
+- Industry: ${user.industry || 'Technology / Professional'}
+- Skills: ${(user.skills || []).join(', ') || 'Professional skills'}
+- Areas of Interest: ${(user.interests || []).join(', ') || 'Mentorship, Leadership'}
+- Current Active Goals: ${goals.length > 0 ? goals.map(g => `${g.title} (${g.progress}% completed)`).join('; ') : 'General career acceleration'}
+`
+    : 'User is an ambitious professional seeking mentorship and career growth advice on MentorNexus.';
 
-  return {
-    answer: `### Strategic Guidance for Your Next Step
+  const systemInstruction = `You are MentorNexus AI Advisor, an expert career mentor, leadership strategist, and professional development coach.
+You provide high-impact, contextual, actionable, and pragmatic guidance to mentees and mentors.
 
-As you navigate your path as a **${roleTitle}**, focus on bridging theoretical understanding with measurable real-world outcomes:
+Context about the user you are advising:
+${userContext}
 
-1. **Take Action Today**: Document 2-3 specific scenarios where you encountered ambiguity this week, and outline the decision frameworks you applied.
-2. **Discuss with Your Mentor**: Bring specific work artifacts or code reviews to your next 1:1 rather than open-ended questions.
-3. **Anchor on Deliverables**: Anchor around ${goalAnchor} and break it down into 2-week actionable deliverables.`
-  };
+Guidelines for your responses:
+- Maintain full awareness of previous conversation turns and follow up coherently.
+- Provide structured, practical advice (use clean markdown formatting with headers, bullet points, and bold terms).
+- Give concrete, real-world examples, actionable scripts, or tactical frameworks when relevant.
+- Be concise, direct, empathetic, and professional.
+- Do not output static boilerplate text; dynamically tailor every answer to the user's ongoing conversation context.`;
+
+  const formattedHistory = formatHistoryForGemini(history);
+  let lastError: any = null;
+
+  for (const modelName of MODELS_PRIORITY) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: systemInstruction,
+        });
+
+        const chat = model.startChat({
+          history: formattedHistory,
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.95,
+          },
+        });
+
+        const result = await chat.sendMessage(question.trim());
+        const response = await result.response;
+        const text = response.text();
+        if (text && text.trim().length > 0) {
+          return { answer: text.trim() };
+        }
+      } catch (err: any) {
+        lastError = err;
+        const errorMsg = err?.message || String(err);
+        const isTransient =
+          errorMsg.includes('503') ||
+          errorMsg.includes('high demand') ||
+          errorMsg.includes('UNAVAILABLE') ||
+          errorMsg.includes('429') ||
+          errorMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTransient && attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 350 + Math.random() * 250));
+          continue;
+        }
+        break; // try next model
+      }
+    }
+  }
+
+  console.error('[Client Gemini] Multi-turn chat failed across models:', lastError);
+  throw new Error(
+    lastError?.message || 'Failed to receive response from Gemini AI. Please verify your connection or try again.'
+  );
 }

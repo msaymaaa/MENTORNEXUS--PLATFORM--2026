@@ -24,7 +24,7 @@ import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { Goal, GoalMilestone } from '../types/index';
+import { Goal, GoalMilestone, GoalStatus } from '../types/index';
 import { GoalCard, getCategoryBadgeStyle } from '../components/GoalCard';
 
 export const GOAL_CATEGORIES = [
@@ -293,10 +293,10 @@ export const GoalsView: React.FC = () => {
 
       const completedCount = updatedMilestones.filter(m => m.completed).length;
       const progress = updatedMilestones.length > 0 ? Math.round((completedCount / updatedMilestones.length) * 100) : 0;
-      const status = progress === 100 ? 'completed' : 'in_progress';
+      const status: GoalStatus = progress === 100 ? 'completed' : 'in_progress';
 
       // Optimistic update
-      const optimisticGoal = { ...goal, milestones: updatedMilestones, progress, status };
+      const optimisticGoal: Goal = { ...goal, milestones: updatedMilestones, progress, status };
       setGoals(prev => prev.map(g => g.id === goal.id ? optimisticGoal : g));
 
       const updated = await api.updateGoal(goal.id, {

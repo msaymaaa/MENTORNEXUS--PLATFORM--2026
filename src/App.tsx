@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider, useApp, AuthMode } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
 import { AIAdvisorModal } from './components/AIAdvisorModal';
@@ -32,7 +32,7 @@ const MainLayout: React.FC = () => {
     closeAuthModal,
   } = useApp();
 
-  const handleOpenAuth = (mode: AuthViewMode = 'choice', role: 'student' | 'early_career' | 'mentor' = 'student') => {
+  const handleOpenAuth = (mode: AuthMode = 'choice', role: 'student' | 'early_career' | 'mentor' = 'student') => {
     openAuthModal(mode, role);
   };
 
