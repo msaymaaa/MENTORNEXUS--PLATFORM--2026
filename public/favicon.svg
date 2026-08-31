@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="mn-bg-grad" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#111B34" />
+      <stop offset="70%" stop-color="#0A1020" />
+      <stop offset="100%" stop-color="#050810" />
+    </radialGradient>
+
+    <!-- Metallic Gold Border Gradient -->
+    <linearGradient id="mn-gold-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF3C4" />
+      <stop offset="25%" stop-color="#D4AF37" />
+      <stop offset="50%" stop-color="#8E7019" />
+      <stop offset="75%" stop-color="#F5DE82" />
+      <stop offset="100%" stop-color="#C5A028" />
+    </linearGradient>
+
+    <!-- Light Gold Facet -->
+    <linearGradient id="mn-gold-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF8D6" />
+      <stop offset="50%" stop-color="#E5C358" />
+      <stop offset="100%" stop-color="#C99E2A" />
+    </linearGradient>
+
+    <!-- Dark Gold Facet -->
+    <linearGradient id="mn-gold-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C5A028" />
+      <stop offset="50%" stop-color="#8F6E15" />
+      <stop offset="100%" stop-color="#604705" />
+    </linearGradient>
+
+    <!-- Letters MN Solid Gold Gradient -->
+    <linearGradient id="mn-gold-letters" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFF0BA" />
+      <stop offset="35%" stop-color="#E0BD4E" />
+      <stop offset="70%" stop-color="#B88E1E" />
+      <stop offset="100%" stop-color="#8C680E" />
+    </linearGradient>
+
+    <!-- Subtle Glow Filter -->
+    <filter id="mn-gold-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.65" />
+    </filter>
+  </defs>
+
+  <!-- Dark Navy Square Badge with Decorative Rounded Corners -->
+  <rect x="4" y="4" width="92" height="92" rx="20" ry="20" fill="url(#mn-bg-grad)" />
+
+  <!-- Outer Decorative Gold Border -->
+  <rect 
+    x="4" 
+    y="4" 
+    width="92" 
+    height="92" 
+    rx="20" 
+    ry="20" 
+    fill="none" 
+    stroke="url(#mn-gold-border)" 
+    stroke-width="3.5" 
+  />
+
+  <!-- Inner Subtle Inset Rim -->
+  <rect 
+    x="7" 
+    y="7" 
+    width="86" 
+    height="86" 
+    rx="17" 
+    ry="17" 
+    fill="none" 
+    stroke="#D4AF37" 
+    stroke-opacity="0.15" 
+    stroke-width="0.75" 
+  />
+
+  <!-- Main Logo Graphics Group -->
+  <g filter="url(#mn-gold-glow)">
+    
+    <!-- Top 5-Point North Star -->
+    <polygon 
+      points="50,9 51.5,13.5 56,13.5 52.5,16.2 53.8,20.5 50,18 46.2,20.5 47.5,16.2 44,13.5 48.5,13.5" 
+      fill="url(#mn-gold-light)" 
+      stroke="url(#mn-gold-dark)" 
+      stroke-width="0.5" 
+    />
+
+    <!-- Compass Ring -->
+    <circle 
+      cx="50" 
+      cy="53" 
+      r="23" 
+      fill="none" 
+      stroke="url(#mn-gold-border)" 
+      stroke-width="2.5" 
+    />
+
+    <!-- 4 Diagonal Anchor Spokes (NW, NE, SW, SE) -->
+    <!-- NW Spoke -->
+    <path d="M 33.7 36.7 L 27 30 M 24 33 L 30 27" stroke="url(#mn-gold-light)" stroke-width="2.8" stroke-linecap="round" />
+    <!-- NE Spoke -->
+    <path d="M 66.3 36.7 L 73 30 M 76 33 L 70 27" stroke="url(#mn-gold-light)" stroke-width="2.8" stroke-linecap="round" />
+    <!-- SW Spoke -->
+    <path d="M 33.7 69.3 L 27 76 M 24 73 L 30 79" stroke="url(#mn-gold-light)" stroke-width="2.8" stroke-linecap="round" />
+    <!-- SE Spoke -->
+    <path d="M 66.3 69.3 L 73 76 M 76 73 L 70 79" stroke="url(#mn-gold-light)" stroke-width="2.8" stroke-linecap="round" />
+
+    <!-- Cardinal Needles -->
+    <!-- North Needle -->
+    <polygon points="50,21 50,47 43.5,47" fill="url(#mn-gold-dark)" />
+    <polygon points="50,21 56.5,47 50,47" fill="url(#mn-gold-light)" />
+
+    <!-- South Needle -->
+    <polygon points="50,88 43.5,61 50,61" fill="url(#mn-gold-dark)" />
+    <polygon points="50,88 50,61 56.5,61" fill="url(#mn-gold-light)" />
+
+    <!-- West Needle -->
+    <polygon points="12,53 36,46.5 36,53" fill="url(#mn-gold-light)" />
+    <polygon points="12,53 36,53 36,59.5" fill="url(#mn-gold-dark)" />
+
+    <!-- East Needle -->
+    <polygon points="88,53 64,46.5 64,53" fill="url(#mn-gold-dark)" />
+    <polygon points="88,53 64,53 64,59.5" fill="url(#mn-gold-light)" />
+
+    <!-- Central MN Monogram Letters -->
+    <!-- Central Background Disc to isolate MN -->
+    <circle cx="50" cy="53.5" r="16.5" fill="#0A1020" fill-opacity="0.9" />
+
+    <!-- Letter 'M' -->
+    <path 
+      d="M 31 63.5 V 43.5 H 35.5 L 41 53.5 L 46.5 43.5 H 51 V 63.5 H 46.5 V 50.5 L 41.8 59 H 40.2 L 35.5 50.5 V 63.5 Z" 
+      fill="url(#mn-gold-letters)" 
+      stroke="#5A4305" 
+      stroke-width="0.4" 
+    />
+
+    <!-- Letter 'N' -->
+    <path 
+      d="M 53 63.5 V 43.5 H 57.5 L 64.5 56.5 V 43.5 H 69 V 63.5 H 64.5 L 57.5 50.5 V 63.5 Z" 
+      fill="url(#mn-gold-letters)" 
+      stroke="#5A4305" 
+      stroke-width="0.4" 
+    />
+  </g>
+</svg>
