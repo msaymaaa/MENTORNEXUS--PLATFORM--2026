@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { AppNotification, UserProfile } from '../types/index';
+import { AppNotification, UserProfile, AIAdvisorMessage } from '../types/index';
 import { api } from '../services/api';
 import { useAuth } from './AuthContext';
 
@@ -45,6 +45,9 @@ interface AppContextType {
   isAdvisorModalOpen: boolean;
   openAdvisorModal: () => void;
   closeAdvisorModal: () => void;
+  advisorMessages: AIAdvisorMessage[];
+  setAdvisorMessages: React.Dispatch<React.SetStateAction<AIAdvisorMessage[]>>;
+  resetAdvisorChat: () => void;
   isAuthModalOpen: boolean;
   authModalMode: AuthMode;
   authModalRole: 'student' | 'early_career' | 'mentor';
@@ -66,6 +69,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedMentorForModal, setSelectedMentorForModal] = useState<UserProfile | null>(null);
   const [isMentorModalOpen, setIsMentorModalOpen] = useState<boolean>(false);
   const [isAdvisorModalOpen, setIsAdvisorModalOpen] = useState<boolean>(false);
+  const createInitialGreeting = useCallback((user?: UserProfile | null): AIAdvisorMessage => ({
+    id: 'msg_welcome',
+    sender: 'assistant',
+    text: `Hello ${user?.name || 'there'}! I am your **MentorNexus AI Career & Mentorship Advisor**.\n\nI have full conversational memory for this session, with deep awareness of your active goals and MentorNexus features.\n\nFeel free to ask for:\n- **Advice on active goals & milestone execution**\n- **1:1 Mentorship agenda frameworks & conversation scripts**\n- **Navigation assistance** (e.g. finding mentors, checking requests, updating goals)\n- **Technical career roadmaps & interview preparation**\n\nHow can I help guide your career growth today?`,
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    action: null,
+  }), []);
+
+  const [advisorMessages, setAdvisorMessages] = useState<AIAdvisorMessage[]>(() => [createInitialGreeting(currentUser)]);
+
+  // Keep welcome message updated when user loads
+  useEffect(() => {
+    setAdvisorMessages(prev => {
+      if (prev.length === 1 && prev[0].id === 'msg_welcome') {
+        return [createInitialGreeting(currentUser)];
+      }
+      return prev;
+    });
+  }, [currentUser, createInitialGreeting]);
+
+  const resetAdvisorChat = useCallback(() => {
+    setAdvisorMessages([createInitialGreeting(currentUser)]);
+  }, [currentUser, createInitialGreeting]);
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<AuthMode>('choice');
   const [authModalRole, setAuthModalRole] = useState<'student' | 'early_career' | 'mentor'>('student');
@@ -255,6 +282,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAdvisorModalOpen,
         openAdvisorModal,
         closeAdvisorModal,
+        advisorMessages,
+        setAdvisorMessages,
+        resetAdvisorChat,
         isAuthModalOpen,
         authModalMode,
         authModalRole,

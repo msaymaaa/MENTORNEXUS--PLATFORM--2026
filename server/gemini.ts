@@ -1,38 +1,54 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { UserProfile, Goal, AIMatchResult } from '../src/types/index';
+import dotenv from 'dotenv';
+import { UserProfile, Goal, AIMatchResult, AIAdvisorAction, AIAdvisorResponse, ValidNavTab } from '../src/types/index';
 
-// Initialize Gemini client with telemetry header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+dotenv.config();
 
-const MODELS_PRIORITY = [
+// Canonical model configuration from environment variable with reliable fallback cascade
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const FALLBACK_MODELS = [
+  PRIMARY_MODEL,
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
   'gemini-3.7-flash',
   'gemini-flash-latest',
-  'gemini-3.1-flash-lite'
 ];
+const MODELS_PRIORITY = Array.from(new Set(FALLBACK_MODELS.filter(Boolean)));
+
+// Lazy / resilient client initialization
+function getAiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || apiKey.trim() === '') {
+    return null;
+  }
+  return new GoogleGenAI({
+    apiKey: apiKey.trim(),
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
 
 /**
  * Resilient helper that attempts calls across priority models and applies retries
  * when encountering transient 503 (High Demand/Unavailable) or 429 errors.
  */
 async function callGeminiWithResilience(
-  callFn: (modelName: string) => Promise<any>,
+  callFn: (modelName: string, ai: GoogleGenAI) => Promise<any>,
   actionName: string
 ): Promise<any | null> {
-  if (!process.env.GEMINI_API_KEY) {
+  const ai = getAiClient();
+  if (!ai) {
+    console.warn(`[Gemini Resiliency] No GEMINI_API_KEY available for "${actionName}".`);
     return null;
   }
 
   for (const model of MODELS_PRIORITY) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const result = await callFn(model);
+        const result = await callFn(model, ai);
         if (result) return result;
       } catch (err: any) {
         const errorMsg = err?.message || String(err);
@@ -41,21 +57,24 @@ async function callGeminiWithResilience(
           errorMsg.includes('high demand') || 
           errorMsg.includes('UNAVAILABLE') || 
           errorMsg.includes('429') ||
-          errorMsg.includes('RESOURCE_EXHAUSTED');
+          errorMsg.includes('RESOURCE_EXHAUSTED') ||
+          errorMsg.includes('Quota exceeded') ||
+          errorMsg.includes('rate limit');
 
         if (isTransient && attempt === 1) {
-          // Quick jittered backoff before second attempt or next model
-          await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 300));
+          // Jittered backoff before second attempt on same model
+          await new Promise(resolve => setTimeout(resolve, 600 + Math.random() * 400));
           continue;
         }
 
-        // On 2nd attempt failure, try the next fallback model in the list
+        // On non-transient or second-attempt failure, continue to next candidate model
+        console.warn(`[Gemini Resiliency] Model "${model}" failed for "${actionName}":`, errorMsg.slice(0, 200));
         break;
       }
     }
   }
 
-  console.warn(`[Gemini Resiliency] Could not complete "${actionName}" via cloud model. Serving intelligent heuristic fallback.`);
+  console.warn(`[Gemini Resiliency] Could not complete "${actionName}" across models.`);
   return null;
 }
 
@@ -71,19 +90,19 @@ export async function generateMentorMatches(
       title: m.title,
       organization: m.organization,
       industry: m.industry,
-      skills: m.skills,
-      mentoringAreas: m.mentoringAreas,
+      skills: m.skills || [],
+      mentoringAreas: m.mentoringAreas || [],
       yearsOfExperience: m.yearsOfExperience,
-      bio: m.bio.substring(0, 200),
+      bio: (m.bio || '').substring(0, 200),
     }));
 
     const userBrief = {
       role: user.role,
       title: user.title,
       industry: user.industry,
-      skills: user.skills,
-      interests: user.interests,
-      mentoringAreas: user.mentoringAreas,
+      skills: user.skills || [],
+      interests: user.interests || [],
+      mentoringAreas: user.mentoringAreas || [],
       activeGoals: goals.map(g => ({ title: g.title, category: g.category, description: g.description })),
     };
 
@@ -96,7 +115,7 @@ Available Mentors:
 ${JSON.stringify(mentorBriefs, null, 2)}
 `;
 
-    const response = await callGeminiWithResilience(async (modelName) => {
+    const response = await callGeminiWithResilience(async (modelName, ai) => {
       return await ai.models.generateContent({
         model: modelName,
         contents: prompt,
@@ -147,10 +166,12 @@ ${JSON.stringify(mentorBriefs, null, 2)}
 function fallbackMentorMatching(user: UserProfile, mentors: UserProfile[]): AIMatchResult[] {
   return mentors.map((m, index) => {
     // Basic heuristic match calculation
-    const sharedSkills = m.skills.filter(s => user.skills.some(us => us.toLowerCase() === s.toLowerCase()));
-    const sharedInterests = m.mentoringAreas.filter(area => 
-      user.interests.some(ui => area.toLowerCase().includes(ui.toLowerCase())) ||
-      user.mentoringAreas.some(uma => area.toLowerCase().includes(uma.toLowerCase()))
+    const userSkills = user.skills || [];
+    const mentorSkills = m.skills || [];
+    const sharedSkills = mentorSkills.filter(s => userSkills.some(us => us.toLowerCase() === s.toLowerCase()));
+    const sharedInterests = (m.mentoringAreas || []).filter(area => 
+      (user.interests || []).some(ui => area.toLowerCase().includes(ui.toLowerCase())) ||
+      (user.mentoringAreas || []).some(uma => area.toLowerCase().includes(uma.toLowerCase()))
     );
 
     const baseScore = 75 + Math.min(20, (sharedSkills.length * 6) + (sharedInterests.length * 5));
@@ -160,8 +181,8 @@ function fallbackMentorMatching(user: UserProfile, mentors: UserProfile[]): AIMa
       mentorId: m.id,
       matchScore: finalScore,
       matchReasons: [
-        `Strong alignment in ${m.industry} and ${m.skills.slice(0, 2).join(', ')}`,
-        `Offers direct guidance in ${m.mentoringAreas[0] || 'Career Roadmapping'}`,
+        `Strong alignment in ${m.industry} and ${(m.skills || []).slice(0, 2).join(', ') || 'Core Competencies'}`,
+        `Offers direct guidance in ${(m.mentoringAreas || [])[0] || 'Career Roadmapping'}`,
         `${m.yearsOfExperience}+ years of proven industry experience at ${m.organization}`
       ],
       suggestedFocusAreas: [
@@ -176,21 +197,22 @@ function fallbackMentorMatching(user: UserProfile, mentors: UserProfile[]): AIMa
 
 export async function generateGoalBreakdown(
   title: string,
-  description: string,
-  category: string,
-  targetDate: string
+  description: string = '',
+  category: string = 'Career Growth',
+  targetDate: string = ''
 ): Promise<{ milestones: { title: string; dueDate?: string }[]; recommendations: string[] }> {
   try {
-    const prompt = `Break down this professional mentorship goal into 4-5 concrete, actionable, sequential milestones with realistic target due dates before ${targetDate}. Also provide 3 tactical recommendations to ensure the mentee succeeds.
+    const effectiveTargetDate = targetDate || new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0];
+    const prompt = `Break down this professional mentorship goal into 4-5 concrete, actionable, sequential milestones with realistic target due dates before ${effectiveTargetDate}. Also provide 3 tactical recommendations to ensure the mentee succeeds.
 
 Goal Title: ${title}
 Category: ${category}
 Description: ${description}
-Target Completion Date: ${targetDate}
-Current Date: 2026-03-01
+Target Completion Date: ${effectiveTargetDate}
+Current Date: ${new Date().toISOString().split('T')[0]}
 `;
 
-    const response = await callGeminiWithResilience(async (modelName) => {
+    const response = await callGeminiWithResilience(async (modelName, ai) => {
       return await ai.models.generateContent({
         model: modelName,
         contents: prompt,
@@ -236,12 +258,18 @@ Current Date: 2026-03-01
 }
 
 function fallbackGoalBreakdown(title: string, targetDate: string) {
+  const now = new Date();
+  const d1 = new Date(now.getTime() + 14 * 86400000).toISOString().split('T')[0];
+  const d2 = new Date(now.getTime() + 35 * 86400000).toISOString().split('T')[0];
+  const d3 = new Date(now.getTime() + 60 * 86400000).toISOString().split('T')[0];
+  const d4 = targetDate || new Date(now.getTime() + 90 * 86400000).toISOString().split('T')[0];
+
   return {
     milestones: [
-      { title: `Conduct baseline skills audit and establish benchmarks for ${title}`, dueDate: '2026-03-20' },
-      { title: 'Draft technical outline / curriculum with mentor input', dueDate: '2026-04-10' },
-      { title: 'Complete practical hands-on implementation and peer code review', dueDate: '2026-05-01' },
-      { title: 'Synthesize outcomes, write retrospective case study, and present findings', dueDate: targetDate || '2026-05-30' }
+      { title: `Conduct baseline skills audit and establish benchmarks for ${title}`, dueDate: d1 },
+      { title: 'Draft technical outline / curriculum with mentor input', dueDate: d2 },
+      { title: 'Complete practical hands-on implementation and peer code review', dueDate: d3 },
+      { title: 'Synthesize outcomes, write retrospective case study, and present findings', dueDate: d4 }
     ],
     recommendations: [
       'Dedicate 3-5 focused hours weekly with time-blocking.',
@@ -254,7 +282,7 @@ function fallbackGoalBreakdown(title: string, targetDate: string) {
 export async function polishMentorshipRequest(
   requester: UserProfile,
   mentor: UserProfile,
-  draftMessage: string,
+  draftMessage: string = '',
   goalsSummary?: string
 ): Promise<{ polishedMessage: string; highlights: string[] }> {
   try {
@@ -263,14 +291,14 @@ export async function polishMentorshipRequest(
 Mentee:
 Name: ${requester.name}
 Role: ${requester.role} (${requester.title} at ${requester.organization})
-Background & Skills: ${requester.skills.join(', ')}
-Interests: ${requester.interests.join(', ')}
+Background & Skills: ${(requester.skills || []).join(', ')}
+Interests: ${(requester.interests || []).join(', ')}
 
 Target Mentor:
 Name: ${mentor.name}
 Title: ${mentor.title} at ${mentor.organization}
-Mentoring Areas: ${mentor.mentoringAreas.join(', ')}
-Key Expertise: ${mentor.skills.join(', ')}
+Mentoring Areas: ${(mentor.mentoringAreas || []).join(', ')}
+Key Expertise: ${(mentor.skills || []).join(', ')}
 
 Mentee's Initial Draft:
 "${draftMessage || 'I want mentorship to grow my career.'}"
@@ -280,7 +308,7 @@ Mentee's Goal Summary:
 
 Generate a refined, professional 3-4 sentence message that is warm, respectful of the mentor's time, references the mentor's specific domain, clearly explains what the mentee hopes to learn, and proposes a low-friction cadence (e.g. bi-weekly 30-min chat). Also provide 2-3 key highlights of why this request will resonate.`;
 
-    const response = await callGeminiWithResilience(async (modelName) => {
+    const response = await callGeminiWithResilience(async (modelName, ai) => {
       return await ai.models.generateContent({
         model: modelName,
         contents: prompt,
@@ -312,7 +340,7 @@ Generate a refined, professional 3-4 sentence message that is warm, respectful o
   }
 
   return {
-    polishedMessage: `Hello ${mentor.name}, I have been following your impactful work in ${mentor.industry} at ${mentor.organization}. As a ${requester.title} with a deep focus on ${requester.skills.slice(0, 2).join(' and ')}, I am seeking mentorship around ${mentor.mentoringAreas[0] || 'strategic skill development'}. I would deeply value the opportunity for a bi-weekly 30-minute conversation to learn from your career journey.`,
+    polishedMessage: `Hello ${mentor.name}, I have been following your impactful work in ${mentor.industry} at ${mentor.organization}. As a ${requester.title} with a deep focus on ${(requester.skills || []).slice(0, 2).join(' and ') || 'strategic skills'}, I am seeking mentorship around ${(mentor.mentoringAreas || [])[0] || 'strategic skill development'}. I would deeply value the opportunity for a bi-weekly 30-minute conversation to learn from your career journey.`,
     highlights: ['Specific acknowledgment of mentor background', 'Clearly stated focus area', 'Respectful, low-burden time commitment']
   };
 }
@@ -322,32 +350,187 @@ export async function getCareerAdvisorResponse(
   user: UserProfile,
   goals: Goal[]
 ): Promise<string> {
-  try {
-    const prompt = `You are MentorNexus AI, an experienced, pragmatic career and mentorship advisor.
-User Profile:
+  const chatRes = await getAdvisorChatResponse(question, [], user, goals);
+  return chatRes.message;
+}
+
+/**
+ * Modern Multi-Turn Context-Aware AI Advisor Chat with Navigation Actions
+ */
+export async function getAdvisorChatResponse(
+  message: string,
+  history: { sender: 'user' | 'assistant' | 'model'; text: string }[] = [],
+  user?: UserProfile | null,
+  goals: Goal[] = []
+): Promise<AIAdvisorResponse> {
+  const userContext = user
+    ? `
+AUTHENTICATED USER CONTEXT (REAL DATA FROM MENTORNEXUS):
 - Name: ${user.name}
-- Role: ${user.role} (${user.title} at ${user.organization})
-- Skills: ${user.skills.join(', ')}
-- Current Goals: ${goals.map(g => `${g.title} (${g.progress}% done)`).join('; ')}
+- Email: ${user.email}
+- Role: ${user.role} (${user.title} at ${user.organization || 'Independent'})
+- Industry: ${user.industry || 'Technology / Professional'}
+- Location: ${user.location || 'Remote'}
+- Years of Experience: ${user.yearsOfExperience}
+- Skills: ${(user.skills || []).join(', ') || 'General Technical / Professional'}
+- Interests: ${(user.interests || []).join(', ') || 'Career Acceleration, Engineering'}
+- Mentoring Areas: ${(user.mentoringAreas || []).join(', ') || 'Leadership, Career Strategy'}
+- Bio: ${user.bio || 'Not provided'}
+- Verification Status: ${user.verificationStatus || 'verified'}
+`
+    : `AUTHENTICATED USER CONTEXT: Guest user exploring MentorNexus platform.`;
 
-User's Question:
-"${question}"
+  const activeGoals = goals || [];
+  const goalsContext = activeGoals.length > 0
+    ? `
+AUTHENTICATED USER ACTIVE GOALS (REAL DATA):
+${activeGoals.map((g, idx) => `Goal ${idx + 1}:
+  - Title: "${g.title}"
+  - Category: ${g.category}
+  - Status: ${g.status} (Progress: ${g.progress}%)
+  - Target Date: ${g.targetDate || 'Flexible'}
+  - Description: ${g.description || 'No description provided'}
+  - Milestones: ${g.milestones?.map(m => `"${m.title}" (${m.completed ? 'Completed' : 'Pending'})`).join(', ') || 'None'}
+`).join('\n')}`
+    : `AUTHENTICATED USER ACTIVE GOALS: Currently no active goals logged in MentorNexus.`;
 
-Provide actionable, structured, empathetic, and direct professional advice in markdown format (under 250 words). Include 1 specific action they can take today and 1 topic to discuss with their mentor in their next 1:1.`;
+  const systemInstruction = `You are the MentorNexus AI Career & Mentorship Advisor, an expert conversational career strategist, executive mentor, and platform guide built natively into MentorNexus.
 
-    const response = await callGeminiWithResilience(async (modelName) => {
-      return await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-      });
-    }, 'getCareerAdvisorResponse');
+PRIMARY DIRECTIVE:
+- Prioritize answering the user's immediate question and maintaining multi-turn conversational context over reciting profile facts.
+- Never output identical generic career boilerplate. Every answer must directly address the user's latest query while remembering previous turns in this conversation.
+- Use the authenticated user's profile and active goals ONLY as supportive background context to personalize advice where relevant. Never invent fake goals, fake mentors, or fake achievements.
 
-    if (response && response.text) {
-      return response.text.trim();
+${userContext}
+${goalsContext}
+
+MENTORNEXUS PLATFORM NAVIGATION & MODULES:
+MentorNexus has the following primary navigation sections:
+- "dashboard": Overview of metrics, upcoming 1:1 sessions, recent requests, active goals, and quick actions.
+- "discover": Browse and search verified mentors, industry leaders, and peers with filtering by skills, industry, and experience.
+- "requests": View and manage incoming and outgoing mentorship/networking requests (Pending, Accepted, Declined).
+- "connections": 1:1 mentorship workspaces for active connections with session scheduling, meeting notes, action items, and real-time chat.
+- "network": Peer-to-peer professional networking relationships and contacts.
+- "goals": Manage career goals, AI milestone breakdowns, and track progress.
+- "library": Experience Library featuring practical articles, case studies, guides, and career wisdom written by mentors.
+- "notifications": Real-time notifications for requests, session updates, and milestone achievements.
+- "profile": Personal profile settings, bio, skills, mentoring areas, and verification status.
+- "admin": Administrative review and member management (available for admin users).
+
+OPERATIONAL GUIDELINES:
+1. Multi-Turn Conversational Memory: Maintain strict continuity with previous messages in the conversation history. If the user asks "What should I do first?" or "Can you make that plan shorter?", refer directly back to what you just suggested.
+2. Direct, Engaging Answers: Keep responses crisp, practical, and conversational. Avoid unprompted long-winded essays unless specifically requested.
+3. Navigation Assistance: If the user asks where something is located, how to perform an action on MentorNexus (e.g., "where are my mentors?", "how to set goals", "show my requests"), explain clearly AND include a structured "action" object with type "navigate" and target set to one of the exact valid tab IDs:
+   ["dashboard", "discover", "requests", "connections", "network", "goals", "library", "notifications", "profile", "admin"].
+4. Non-Navigation Chats: If the user is having a general technical, strategic, or career conversation, set "action" to null.
+5. Formatting: Use clean Markdown formatting with headers (###), bullet points, and **bold text** for key takeaways.`;
+
+  // Format multi-turn history into valid alternating user/model contents
+  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = [];
+
+  for (const item of history) {
+    if (!item.text || !item.text.trim()) continue;
+    const role: 'user' | 'model' = item.sender === 'user' ? 'user' : 'model';
+
+    if (contents.length === 0) {
+      if (role !== 'user') continue; // First turn in contents must be from user
+      contents.push({ role: 'user', parts: [{ text: item.text.trim() }] });
+    } else {
+      const prev = contents[contents.length - 1];
+      if (prev.role === role) {
+        prev.parts[0].text += `\n\n${item.text.trim()}`;
+      } else {
+        contents.push({ role, parts: [{ text: item.text.trim() }] });
+      }
     }
-  } catch (error) {
-    console.error('Error generating career advice with Gemini:', error);
   }
 
-  return `As you navigate your path as a ${user.title}, focus on bridging theory with measurable production outcomes. Engage with your mentor by bringing specific architectural choices or code reviews rather than open-ended questions. Your active goal "${goals[0]?.title || 'Skill Mastery'}" is a fantastic anchor—break it into 2-week deliverables!`;
+  // Append current user message
+  if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+    contents[contents.length - 1].parts[0].text += `\n\n${message.trim()}`;
+  } else {
+    contents.push({ role: 'user', parts: [{ text: message.trim() }] });
+  }
+
+  try {
+    const response = await callGeminiWithResilience(async (modelName, ai) => {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              message: {
+                type: Type.STRING,
+                description: 'The direct conversational markdown advice or response to the user',
+              },
+              action: {
+                type: Type.OBJECT,
+                nullable: true,
+                properties: {
+                  type: { type: Type.STRING, enum: ['navigate'] },
+                  target: {
+                    type: Type.STRING,
+                    enum: [
+                      'dashboard',
+                      'discover',
+                      'requests',
+                      'connections',
+                      'network',
+                      'goals',
+                      'library',
+                      'notifications',
+                      'profile',
+                      'admin',
+                    ],
+                  },
+                  label: {
+                    type: Type.STRING,
+                    description: 'Short button label like "Open Discover" or "Go to Goals"',
+                  },
+                },
+                required: ['type', 'target', 'label'],
+              },
+            },
+            required: ['message'],
+          },
+        },
+      });
+    }, 'getAdvisorChatResponse');
+
+    if (response) {
+      const rawText = response.text?.trim();
+      if (rawText) {
+        try {
+          const parsed = JSON.parse(rawText);
+          if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+            return {
+              success: true,
+              message: parsed.message.trim(),
+              action: parsed.action || null,
+            };
+          }
+        } catch {
+          // If JSON parse fails, use raw text directly
+          return {
+            success: true,
+            message: rawText,
+            action: null,
+          };
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Gemini Advisor] Error during chat completion:', error);
+  }
+
+  // If Gemini calls failed across all models, return a genuine controlled error response
+  return {
+    success: false,
+    message: 'MentorNexus AI Advisor is currently experiencing high demand or connectivity limits. Please try asking your question again.',
+    action: null,
+  };
 }

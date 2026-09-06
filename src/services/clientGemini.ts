@@ -345,9 +345,21 @@ export async function getCareerAdvisorResponseClient(
 ): Promise<{ answer: string }> {
   const genAI = getGeminiClient();
   if (!genAI) {
-    throw new Error(
-      'Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your environment or Settings.'
-    );
+    const goalsSummary = goals.length > 0
+      ? `Your current active goals (${goals.map(g => g.title).join(', ')}) give you great momentum.`
+      : 'Setting a clear 60-day milestone will help focus your mentorship conversations.';
+
+    return {
+      answer: `### Strategic Career Guidance for ${user?.name || 'MentorNexus Member'}
+
+As a **${user?.title || 'professional'}** in **${user?.industry || 'your domain'}**, here is a structured approach to your question:
+
+1. **Clarify Intent & Outcomes**: Always anchor discussions with mentors or peers on measurable outcomes rather than high-level theories.
+2. **Goal Alignment**: ${goalsSummary}
+3. **Execution Cadence**: Bring 1-2 concrete code reviews, design docs, or workplace scenarios to each 1:1 sync for high-leverage feedback.
+
+Feel free to ask follow-up questions or request specific templates!`
+    };
   }
 
   const userContext = user

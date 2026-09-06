@@ -17,8 +17,15 @@ function normalizeServerSupabaseConfig(rawUrl?: string, rawKey?: string) {
     key = temp;
   }
 
-  // Strip trailing /rest/v1 or trailing slashes so Supabase SDK builds correct endpoints
-  url = url.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+  // Strip trailing /rest/v1, /auth/v1, or trailing slashes, ensuring clean origin URL
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      const parsed = new URL(url);
+      url = parsed.origin;
+    } catch {
+      url = url.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
+    }
+  }
 
   const isConfigured = Boolean(
     url && 

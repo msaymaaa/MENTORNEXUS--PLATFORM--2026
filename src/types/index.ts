@@ -208,3 +208,42 @@ export interface AIMatchResult {
   fitSummary: string;
 }
 
+export type ValidNavTab = 
+  | 'dashboard' 
+  | 'discover' 
+  | 'requests' 
+  | 'connections' 
+  | 'network' 
+  | 'goals' 
+  | 'library' 
+  | 'notifications' 
+  | 'profile' 
+  | 'admin';
+
+export interface AIAdvisorAction {
+  type: 'navigate';
+  target: ValidNavTab;
+  label?: string;
+}
+
+export interface AIAdvisorMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  isError?: boolean;
+  action?: AIAdvisorAction | null;
+  actionConsumed?: boolean;
+}
+
+export interface AIAdvisorResponse {
+  success: boolean;
+  message: string;
+  conversationId?: string;
+  action?: AIAdvisorAction | null;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+

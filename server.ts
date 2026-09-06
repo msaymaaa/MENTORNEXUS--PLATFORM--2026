@@ -7,7 +7,8 @@ import {
   generateMentorMatches, 
   generateGoalBreakdown, 
   polishMentorshipRequest, 
-  getCareerAdvisorResponse 
+  getCareerAdvisorResponse,
+  getAdvisorChatResponse
 } from './server/gemini';
 import { UserRole, VerificationStatus, UserProfile } from './src/types/index';
 import { isServerSupabaseConfigured, getServerSupabaseClient } from './server/supabase';
@@ -167,15 +168,20 @@ async function startServer() {
       }
     }
 
+    if (!userProfile && req.body && req.body.userProfile && typeof req.body.userProfile === 'object') {
+      const p = req.body.userProfile;
+      if (p.id && p.name) {
+        userId = p.id;
+        userProfile = p as UserProfile;
+      }
+    }
+
     if (!userId) {
       const headerUserId = req.headers['x-user-id'] as string;
-      if (headerUserId && headerUserId !== 'anonymous') {
-        userId = headerUserId;
-      } else if (currentActiveUserId) {
-        userId = currentActiveUserId;
-      }
-
-      if (userId) {
+      const bodyUserId = req.body?.userId as string;
+      const candidateId = (headerUserId && headerUserId !== 'anonymous') ? headerUserId : (bodyUserId && bodyUserId !== 'anonymous' ? bodyUserId : null);
+      if (candidateId) {
+        userId = candidateId;
         userProfile = await resolveUserById(userId);
       }
     }
@@ -1747,6 +1753,71 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/ai/career-advice:', err);
       res.status(500).json({ error: err.message || 'Failed to get advice' });
+    }
+  });
+
+  app.post('/api/ai/advisor-chat', async (req, res) => {
+    try {
+      const { message, history } = req.body;
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ 
+          success: false, 
+          error: { code: 'INVALID_REQUEST', message: 'Message is required' } 
+        });
+      }
+
+      const { userId: authUserId, userProfile: authProfile } = await resolveAuthenticatedUser(req);
+      const targetUserId = authUserId || req.body.userId || null;
+      const user = authProfile || (targetUserId ? await resolveUserById(targetUserId) : null);
+
+      let goals: any[] = [];
+      if (user?.id) {
+        goals = db.getGoals(user.id);
+        const client = getServerSupabaseClient();
+        if (client && goals.length === 0) {
+          try {
+            const { data: supaGoals } = await client.from('goals').select('*').eq('user_id', user.id);
+            if (supaGoals && supaGoals.length > 0) {
+              goals = supaGoals.map((g: any) => ({
+                id: String(g.id),
+                userId: g.user_id,
+                title: g.title,
+                description: g.description || '',
+                category: g.category || 'Career Growth',
+                targetDate: g.target_date || '2026-06-01',
+                status: g.status || 'in_progress',
+                progress: Number(g.progress ?? 0),
+                milestones: Array.isArray(g.milestones) ? g.milestones : [],
+                createdAt: g.created_at || new Date().toISOString(),
+                updatedAt: g.updated_at || new Date().toISOString(),
+              }));
+            }
+          } catch (e) {
+            console.warn('Goals fetch notice for advisor chat:', e);
+          }
+        }
+      }
+
+      // Safe debugging log with no secrets or tokens
+      console.log(`[AI Advisor Request] Authenticated user ID: ${user?.id || 'guest'}, Profile found: ${Boolean(user)}, Role: ${user?.role || 'guest'}, Name: ${user?.name || 'Guest'}, Active goals count: ${goals.length}`);
+
+      const result = await getAdvisorChatResponse(
+        message,
+        Array.isArray(history) ? history : [],
+        user,
+        goals
+      );
+
+      return res.json(result);
+    } catch (err: any) {
+      console.error('Error in /api/ai/advisor-chat:', err);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: err?.message || 'Failed to process message with AI Advisor',
+        },
+      });
     }
   });
 

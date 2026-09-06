@@ -9,7 +9,10 @@ import {
   AIMatchResult,
   ChatMessage,
   UserRole,
-  MentorshipMeeting 
+  MentorshipMeeting,
+  AIAdvisorAction,
+  AIAdvisorResponse,
+  AIAdvisorMessage
 } from '../types/index';
 import { supabaseDb, getCachedMeetings, setCachedMeetings } from './supabaseDb';
 import { isSupabaseConfigured, getSupabaseClient } from './supabase';
@@ -993,11 +996,29 @@ export const api = {
     return res.json();
   },
 
-  // AI Mentorship & Advisory (Client-side @google/generative-ai & Supabase JS)
+  // AI Mentorship & Career Advisor (Server-backed with resilient fallback)
   async getAIMatches(): Promise<AIMatchResult[]> {
     try {
       const currentUser = await api.getCurrentUser();
       if (!currentUser) return [];
+
+      const token = await api.getAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser.id) headers['x-user-id'] = currentUser.id;
+
+      const res = await fetch(`${API_BASE}/ai/match-mentors`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId: currentUser.id }),
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const matches = await res.json();
+        if (Array.isArray(matches) && matches.length > 0) {
+          return matches;
+        }
+      }
 
       const [goals, mentors] = await Promise.all([
         api.getGoals(currentUser.id),
@@ -1007,7 +1028,7 @@ export const api = {
       const availableMentors = mentors.filter(m => m.id !== currentUser.id && !m.isBanned);
       return await generateMentorMatchesClient(currentUser, goals, availableMentors);
     } catch (err) {
-      console.warn('Error calculating AI mentor matches client-side:', err);
+      console.warn('Error calculating AI mentor matches:', err);
       return [];
     }
   },
@@ -1016,6 +1037,27 @@ export const api = {
     milestones: { title: string; dueDate?: string }[];
     recommendations: string[];
   }> {
+    try {
+      const token = await api.getAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/ai/breakdown-goal`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.milestones) && data.milestones.length > 0) {
+          return data;
+        }
+      }
+    } catch (err) {
+      console.warn('Server goal breakdown fallback:', err);
+    }
+
     return await generateGoalBreakdownClient(
       payload.title,
       payload.description,
@@ -1040,6 +1082,24 @@ export const api = {
   }> {
     try {
       const currentUser = await api.getCurrentUser();
+      const token = await api.getAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+
+      const res = await fetch(`${API_BASE}/ai/polish-request`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.polishedMessage) {
+          return data;
+        }
+      }
+
       const mentors = await api.getMentors();
       const mentor = mentors.find(m => m.id === payload.mentorId) || (await api.getUserById(payload.mentorId));
 
@@ -1057,7 +1117,7 @@ export const api = {
         payload.goalsSummary
       );
     } catch (err) {
-      console.warn('Error polishing mentorship request client-side:', err);
+      console.warn('Error polishing mentorship request:', err);
       return {
         polishedMessage: payload.draftMessage || 'I would like to request mentorship to help guide my professional development.',
         highlights: ['Clear and direct request', 'Focus on professional growth']
@@ -1065,13 +1125,60 @@ export const api = {
     }
   },
 
+  async sendAdvisorChatMessage(
+    message: string,
+    history: { sender: 'user' | 'assistant' | 'model'; text: string; action?: AIAdvisorAction | null }[] = [],
+    signal?: AbortSignal
+  ): Promise<AIAdvisorResponse> {
+    const currentUser = await api.getCurrentUser();
+    const token = await api.getAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+
+    try {
+      const res = await fetch(`${API_BASE}/ai/advisor-chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ 
+          message, 
+          history, 
+          userId: currentUser?.id,
+          userProfile: currentUser || undefined
+        }),
+        signal,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Server returned error status ${res.status}`);
+      }
+
+      const data: AIAdvisorResponse = await res.json();
+      return data;
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw err;
+      }
+      console.warn('[API Advisor] Server advisor call error:', err);
+      return {
+        success: false,
+        message: err.message || 'MentorNexus AI Advisor is temporarily experiencing high traffic. Please retry in a few moments.',
+        action: null,
+      };
+    }
+  },
+
   async getCareerAdviceAI(
     question: string,
-    history?: { sender: 'user' | 'assistant' | 'model'; text: string }[]
-  ): Promise<{ answer: string }> {
-    const currentUser = await api.getCurrentUser();
-    const goals = currentUser ? await api.getGoals(currentUser.id) : [];
-    return await getCareerAdvisorResponseClient(question, currentUser, goals, history);
+    history?: { sender: 'user' | 'assistant' | 'model'; text: string }[],
+    signal?: AbortSignal
+  ): Promise<{ answer: string; action?: AIAdvisorAction | null }> {
+    const res = await this.sendAdvisorChatMessage(question, history as any, signal);
+    return {
+      answer: res.message,
+      action: res.action,
+    };
   },
 };
 

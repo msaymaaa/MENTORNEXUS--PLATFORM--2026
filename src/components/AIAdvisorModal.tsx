@@ -10,36 +10,37 @@ import {
   Loader2, 
   RotateCcw,
   AlertCircle,
-  MessageSquareQuote
+  ArrowRight,
+  Copy,
+  Check,
+  Compass,
+  Target,
+  Users,
+  BookOpen,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-
-export interface Message {
-  id: string;
-  sender: 'user' | 'assistant';
-  text: string;
-  timestamp: string;
-  isError?: boolean;
-}
+import { AIAdvisorMessage, ValidNavTab } from '../types/index';
 
 export const AIAdvisorModal: React.FC = () => {
   const { currentUser } = useAuth();
-  const { isAdvisorModalOpen, closeAdvisorModal } = useApp();
+  const { 
+    isAdvisorModalOpen, 
+    closeAdvisorModal, 
+    advisorMessages, 
+    setAdvisorMessages, 
+    resetAdvisorChat,
+    setActiveTab,
+    showToast
+  } = useApp();
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const getInitialGreeting = (): Message => ({
-    id: 'init',
-    sender: 'assistant',
-    text: `Hello ${currentUser?.name || 'there'}! I am your **MentorNexus AI Career & Mentorship Advisor**.\n\nI have full conversational memory for this session, so feel free to ask questions, explore scenarios, ask for specific examples, or refine any topic step-by-step.\n\nHow can I help accelerate your growth today?`,
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  });
-
-  const [messages, setMessages] = useState<Message[]>([getInitialGreeting()]);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,113 +50,207 @@ export const AIAdvisorModal: React.FC = () => {
     if (isAdvisorModalOpen) {
       scrollToBottom();
     }
-  }, [messages, loading, isAdvisorModalOpen]);
+  }, [advisorMessages, loading, isAdvisorModalOpen]);
+
+  // Clean up abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   if (!isAdvisorModalOpen) return null;
 
+  const VALID_NAV_TARGETS: readonly ValidNavTab[] = [
+    'dashboard',
+    'discover',
+    'requests',
+    'connections',
+    'network',
+    'goals',
+    'library',
+    'notifications',
+    'profile',
+    'admin',
+  ] as const;
+
   const quickPrompts = [
-    'How do I structure my first 30-minute mentorship session?',
-    'What strategic questions should I ask a Staff Systems Architect?',
-    'How can I break down a 60-day goal into weekly deliverables?',
-    'Frameworks for navigating promotions to senior engineering roles'
+    {
+      icon: Users,
+      label: '1:1 Mentorship Agenda',
+      prompt: 'How should I structure my upcoming 30-minute mentorship session for maximum impact?'
+    },
+    {
+      icon: Target,
+      label: 'Milestone Execution',
+      prompt: 'How can I break down my active goals into manageable weekly milestones?'
+    },
+    {
+      icon: Compass,
+      label: 'Find Right Mentors',
+      prompt: 'How do I identify and reach out to the most relevant mentors for my background?'
+    },
+    {
+      icon: BookOpen,
+      label: 'System Design & Promos',
+      prompt: 'What strategies and frameworks should I use to demonstrate senior engineering leadership?'
+    }
   ];
 
-  const handleResetChat = () => {
-    setMessages([getInitialGreeting()]);
-    setInput('');
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const getTargetTabName = (tab: ValidNavTab): string => {
+    switch (tab) {
+      case 'dashboard': return 'Dashboard Overview';
+      case 'discover': return 'Explore Mentors & Filters';
+      case 'goals': return 'Active Goals & Milestones';
+      case 'requests': return 'Mentorship Requests';
+      case 'connections': return 'Active Connections & Syncs';
+      case 'network': return 'Peer & Mentorship Network';
+      case 'library': return 'Experience & Knowledge Library';
+      case 'notifications': return 'System Notifications';
+      case 'profile': return 'Your Profile Settings';
+      case 'admin': return 'Admin Management Portal';
+      default: return tab;
+    }
+  };
+
+  const handleExecuteAction = (messageId: string, rawTarget: ValidNavTab) => {
+    // 1. Strict Target Validation against registered MentorNexus routes
+    if (!VALID_NAV_TARGETS.includes(rawTarget)) {
+      showToast('error', 'Navigation Error', `Invalid navigation destination: "${rawTarget}"`);
+      return;
+    }
+
+    let target: ValidNavTab = rawTarget;
+    if (target === 'admin' && currentUser?.role !== 'admin') {
+      target = 'dashboard';
+    }
+
+    // 2. Mark this specific message's action as consumed (one-time execution)
+    setAdvisorMessages(prev =>
+      prev.map(msg => (msg.id === messageId ? { ...msg, actionConsumed: true } : msg))
+    );
+
+    // 3. Directly navigate to target tab via application state router
+    setActiveTab(target);
+
+    // 4. Close the AI Advisor modal
+    closeAdvisorModal();
+
+    // 5. User feedback via toast
+    showToast('info', 'Navigation', `Navigated to ${getTargetTabName(target)}`);
   };
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || input).trim();
     if (!query || loading) return;
 
-    const userMsg: Message = {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const userMsg: AIAdvisorMessage = {
       id: `msg_user_${Date.now()}`,
       sender: 'user',
       text: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    // Capture the snapshot of all preceding messages as conversation history
-    const conversationHistory = [...messages];
+    // Capture snapshot of history
+    const conversationHistory = [...advisorMessages];
 
-    setMessages(prev => [...prev, userMsg]);
+    setAdvisorMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
 
     try {
-      // Pass the entire conversation history along with the new query
-      const res = await api.getCareerAdviceAI(query, conversationHistory);
+      const res = await api.sendAdvisorChatMessage(query, conversationHistory, controller.signal);
       
-      const botMsg: Message = {
+      const botMsg: AIAdvisorMessage = {
         id: `msg_bot_${Date.now()}`,
         sender: 'assistant',
-        text: res.answer,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        text: res.message,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        action: res.action || null,
       };
-      setMessages(prev => [...prev, botMsg]);
+
+      setAdvisorMessages(prev => [...prev, botMsg]);
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
+
       const errorMessage = err?.message || 'Unable to retrieve AI advice at this time. Please try again.';
-      const errorMsg: Message = {
+      const errorMsg: AIAdvisorMessage = {
         id: `msg_err_${Date.now()}`,
         sender: 'assistant',
         text: `**Advisor Notice**: ${errorMessage}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isError: true
       };
-      setMessages(prev => [...prev, errorMsg]);
+      setAdvisorMessages(prev => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#050608]/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 bg-[#050608]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
       <div 
         id="ai-advisor-dialog"
-        className="bg-[#11131E] rounded-2xl max-w-2xl w-full shadow-2xl border border-[#262A3C] overflow-hidden flex flex-col h-[650px] max-h-[90vh] my-auto text-[#F5F2EB]"
+        className="bg-[#11131E] rounded-2xl max-w-3xl w-full shadow-2xl border border-[#262A3C] overflow-hidden flex flex-col h-[700px] max-h-[92vh] my-auto text-[#F5F2EB]"
       >
         {/* Header */}
-        <div className="px-6 py-4 bg-[#161925] border-b border-[#232738] text-[#F5F2EB] flex items-center justify-between shrink-0">
+        <div className="px-5 py-3.5 sm:px-6 sm:py-4 bg-[#161925] border-b border-[#232738] text-[#F5F2EB] flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
-              <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] shadow-inner">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#D4AF37]" />
             </div>
             <div>
-              <h3 className="text-base font-serif font-bold text-[#F5F2EB] flex items-center space-x-2">
+              <h3 className="text-sm sm:text-base font-serif font-bold text-[#F5F2EB] flex items-center space-x-2">
                 <span>MentorNexus AI Advisor</span>
                 <span className="text-[10px] font-mono font-semibold uppercase tracking-wider bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-2 py-0.5 rounded text-[#D4AF37]">
-                  Multi-Turn Memory
+                  Continuous Context
                 </span>
               </h3>
-              <p className="text-xs text-[#9E9A90] font-sans">
-                Context-aware guidance for 1:1 sessions, goal breakdown & career roadmaps
+              <p className="text-[11px] sm:text-xs text-[#9E9A90] font-sans">
+                Real-time career mentorship, 1:1 strategy, and app navigation
               </p>
             </div>
           </div>
           <div className="flex items-center space-x-1.5">
-            {messages.length > 1 && (
+            {advisorMessages.length > 1 && (
               <button
-                onClick={handleResetChat}
-                title="Reset conversation memory"
-                className="p-1.5 rounded-lg text-[#7A766E] hover:text-[#F5F2EB] hover:bg-[#1C2030] cursor-pointer transition-colors flex items-center space-x-1 text-xs"
+                type="button"
+                onClick={resetAdvisorChat}
+                title="Start a fresh conversation"
+                className="p-1.5 px-2.5 rounded-lg text-[#7A766E] hover:text-[#F5F2EB] hover:bg-[#1C2030] cursor-pointer transition-colors flex items-center space-x-1 text-xs border border-transparent hover:border-[#262A3C]"
               >
-                <RotateCcw className="w-4 h-4" />
-                <span className="hidden sm:inline font-mono text-[11px]">New Chat</span>
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="font-mono text-[11px]">New Chat</span>
               </button>
             )}
             <button
+              type="button"
               onClick={closeAdvisorModal}
               className="p-1.5 rounded-lg text-[#7A766E] hover:text-[#F5F2EB] hover:bg-[#1C2030] cursor-pointer transition-colors"
+              title="Close Advisor"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Chat message list */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-[#0D0F17]">
-          {messages.map((m) => {
+        {/* Chat message stream */}
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-[#0D0F17]">
+          {advisorMessages.map((m) => {
             const isBot = m.sender === 'assistant';
             return (
               <div
@@ -174,7 +269,7 @@ export const AIAdvisorModal: React.FC = () => {
                   )}
                 </div>
 
-                <div className={`max-w-[84%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm ${
+                <div className={`max-w-[88%] sm:max-w-[82%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm flex flex-col ${
                   isBot 
                     ? m.isError
                       ? 'bg-red-950/20 text-red-200 border border-red-900/40 rounded-tl-xs'
@@ -188,9 +283,88 @@ export const AIAdvisorModal: React.FC = () => {
                   ) : (
                     <p className="whitespace-pre-wrap">{m.text}</p>
                   )}
-                  <span className={`text-[10px] block mt-2 font-mono ${isBot ? 'text-[#7A766E]' : 'text-[#090A0F]/70 text-right'}`}>
-                    {m.timestamp}
-                  </span>
+
+                  {/* Retry button for error states */}
+                  {isBot && m.isError && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = advisorMessages.findIndex(msg => msg.id === m.id);
+                        const prevUserMsg = [...advisorMessages.slice(0, idx)].reverse().find(msg => msg.sender === 'user');
+                        if (prevUserMsg) {
+                          handleSend(prevUserMsg.text);
+                        }
+                      }}
+                      className="mt-2.5 px-3 py-1 bg-red-900/40 hover:bg-red-900/70 border border-red-700/50 text-red-200 text-[11px] rounded-lg transition-colors cursor-pointer flex items-center space-x-1.5 w-fit"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Retry Question</span>
+                    </button>
+                  )}
+
+                  {/* Structured Navigation Action Card */}
+                  {isBot && m.action && m.action.type === 'navigate' && m.action.target && (
+                    <div className="mt-3 pt-3 border-t border-[#232738] flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#181B28]/80 p-3 rounded-xl border border-[#2D3349]">
+                      <div className="flex items-center space-x-2">
+                        <Compass className={`w-4 h-4 shrink-0 ${m.actionConsumed ? 'text-[#9E9A90]' : 'text-[#D4AF37]'}`} />
+                        <div>
+                          <p className={`font-semibold text-[11px] ${m.actionConsumed ? 'text-[#9E9A90]' : 'text-white'}`}>
+                            {m.action.label || `Suggested Location: ${getTargetTabName(m.action.target)}`}
+                          </p>
+                          <p className="text-[10px] text-[#9E9A90]">
+                            Tab target: <code className="font-mono text-[#D4AF37]">{m.action.target}</code>
+                          </p>
+                        </div>
+                      </div>
+
+                      {m.actionConsumed ? (
+                        <div className="px-3 py-1 bg-[#1C2030] text-[#9E9A90] border border-[#2D3349] font-mono text-[11px] rounded-lg flex items-center justify-center space-x-1.5 shrink-0 select-none">
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span>Navigated ✓</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExecuteAction(m.id, m.action!.target);
+                          }}
+                          className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#C5A028] text-[#090A0F] font-bold rounded-lg text-xs flex items-center justify-center space-x-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+                        >
+                          <span>Go there now</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Message Footer: Timestamp & Action buttons */}
+                  <div className={`flex items-center justify-between mt-2 pt-1.5 ${isBot ? 'text-[#7A766E]' : 'text-[#090A0F]/70'}`}>
+                    <span className="text-[10px] font-mono">
+                      {m.timestamp}
+                    </span>
+
+                    {isBot && !m.isError && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(m.id, m.text)}
+                        className="p-1 hover:text-[#F5F2EB] hover:bg-[#1E2232] rounded transition-colors flex items-center space-x-1 text-[10px] font-mono cursor-pointer"
+                        title="Copy message"
+                      >
+                        {copiedId === m.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -201,9 +375,9 @@ export const AIAdvisorModal: React.FC = () => {
               <div className="w-8 h-8 rounded-full bg-[#181B28] border border-[#343A52] text-[#D4AF37] flex items-center justify-center shrink-0">
                 <Bot className="w-4 h-4" />
               </div>
-              <div className="bg-[#141622] border border-[#262A3C] rounded-2xl rounded-tl-xs p-4 text-[#9E9A90] text-xs flex items-center space-x-2.5">
+              <div className="bg-[#141622] border border-[#262A3C] rounded-2xl rounded-tl-xs p-4 text-[#9E9A90] text-xs flex items-center space-x-2.5 shadow-sm">
                 <Loader2 className="w-4 h-4 animate-spin text-[#D4AF37]" />
-                <span className="font-mono">Synthesizing context-aware advice with conversation memory...</span>
+                <span className="font-mono">Synthesizing context-aware guidance with conversation memory...</span>
               </div>
             </div>
           )}
@@ -211,29 +385,34 @@ export const AIAdvisorModal: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Quick prompt suggestions */}
-        {messages.length <= 3 && !loading && (
-          <div className="px-6 py-2.5 bg-[#12141F] border-t border-[#232738] shrink-0">
-            <div className="text-[11px] font-mono uppercase tracking-wider text-[#7A766E] mb-1.5 flex items-center space-x-1.5">
+        {/* Quick prompt suggestions bar */}
+        {advisorMessages.length <= 2 && !loading && (
+          <div className="px-4 py-2.5 sm:px-6 bg-[#12141F] border-t border-[#232738] shrink-0">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#7A766E] mb-1.5 flex items-center space-x-1.5">
               <Lightbulb className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>Suggested Starter Prompts:</span>
+              <span>Suggested Career Topics:</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {quickPrompts.map((p, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSend(p)}
-                  className="text-[11px] bg-[#161925] hover:bg-[#1C2030] text-[#9E9A90] hover:text-[#F5F2EB] border border-[#262A3C] hover:border-[#D4AF37]/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-left"
-                >
-                  {p}
-                </button>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {quickPrompts.map((item, idx) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSend(item.prompt)}
+                    className="text-[11px] bg-[#161925] hover:bg-[#1C2030] text-[#9E9A90] hover:text-[#F5F2EB] border border-[#262A3C] hover:border-[#D4AF37]/40 px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-left flex items-center space-x-2"
+                  >
+                    <Icon className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* Input Bar */}
-        <div className="p-4 bg-[#141622] border-t border-[#232738] shrink-0">
+        <div className="p-3.5 sm:p-4 bg-[#141622] border-t border-[#232738] shrink-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -245,7 +424,7 @@ export const AIAdvisorModal: React.FC = () => {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question or follow-up on previous advice..."
+              placeholder="Ask for 1:1 agendas, milestone reviews, or navigation guidance..."
               className="flex-1 px-4 py-2.5 bg-[#161925] border border-[#2D3349] rounded-xl text-xs text-[#F5F2EB] placeholder-[#5A574E] focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-hidden"
               disabled={loading}
             />
@@ -253,6 +432,7 @@ export const AIAdvisorModal: React.FC = () => {
               type="submit"
               disabled={!input.trim() || loading}
               className="p-2.5 bg-[#D4AF37] hover:bg-[#C5A028] disabled:opacity-40 text-[#090A0F] rounded-xl shadow-xs transition-colors cursor-pointer"
+              title="Send message"
             >
               <Send className="w-4 h-4" />
             </button>
