@@ -14,7 +14,7 @@ function getGeminiClient(): GoogleGenerativeAI | null {
   return new GoogleGenerativeAI(key.trim());
 }
 
-const PRIMARY_MODEL = 'gemini-2.5-flash';
+const PRIMARY_MODEL = 'gemini-3.8-flash';
 
 /**
  * Resilient helper that attempts calls with retries using gemini-3.8-flash.
