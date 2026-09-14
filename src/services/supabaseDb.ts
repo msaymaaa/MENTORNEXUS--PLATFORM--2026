@@ -513,11 +513,11 @@ export const supabaseDb = {
     let query = client.from('profiles').select('*');
     if (role && role !== 'all') {
       if (role === 'mentor' || role === 'mentors') {
-        query = query.or('role.eq.mentor,is_mentor.eq.true');
+        query = query.eq('role', 'mentor');
       } else if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
         query = query.or('role.eq.student,role.eq.learner');
-      } else if (role === 'early_career' || role === 'early-career') {
-        query = query.eq('role', 'early_career');
+      } else if (role === 'others' || role === 'rest' || role === 'other') {
+        query = query.not('role', 'in', '("mentor","student","learner")');
       } else {
         query = query.eq('role', role);
       }
@@ -528,9 +528,12 @@ export const supabaseDb = {
       console.warn('Supabase getProfilesByRole fallback:', error.message);
       const all = await this.getProfiles();
       if (!role || role === 'all') return all;
-      if (role === 'mentor' || role === 'mentors') return all.filter(u => u.role === 'mentor');
-      if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') return all.filter(u => u.role === 'student' || u.role === 'learner');
-      if (role === 'early_career' || role === 'early-career') return all.filter(u => u.role === 'early_career');
+      if (role === 'mentor' || role === 'mentors') return all.filter(u => u.role?.toLowerCase() === 'mentor');
+      if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') return all.filter(u => u.role?.toLowerCase() === 'student' || u.role?.toLowerCase() === 'learner');
+      if (role === 'others' || role === 'rest' || role === 'other') return all.filter(u => {
+        const r = u.role?.toLowerCase();
+        return r !== 'mentor' && r !== 'student' && r !== 'learner';
+      });
       return all.filter(u => u.role === role);
     }
     return (data || []).map(row => mapProfileFromSupabase(row)).filter(u => !u.isBanned);
@@ -1593,21 +1596,20 @@ export const supabaseDb = {
     // Dispatch real in-app notification to the other connection participant
     try {
       const connection = await this.getConnectionById(msg.connectionId);
-      if (connection) {
-        const recipientId = connection.studentId === currentUserId ? connection.mentorId : connection.studentId;
-        if (recipientId && recipientId !== currentUserId) {
-          const previewText = msg.messageType === 'voice' 
-            ? '🎤 Sent a voice note' 
-            : (msg.content.length > 50 ? `${msg.content.slice(0, 50)}...` : msg.content);
+      const recipientId = (msg as any).recipientId || (connection ? (connection.studentId === currentUserId ? connection.mentorId : connection.studentId) : null);
+      if (recipientId && recipientId !== currentUserId) {
+        const previewText = msg.messageType === 'voice' 
+          ? '🎤 Sent a voice note' 
+          : (msg.content.length > 60 ? `${msg.content.slice(0, 60)}...` : msg.content || 'New message');
 
-          await this.createNotification({
-            userId: recipientId,
-            title: `New message from ${currentUserName || 'Connection'}`,
-            message: previewText,
-            type: 'message',
-            linkTab: 'connections',
-          }).catch(() => {});
-        }
+        await this.createNotification({
+          userId: recipientId,
+          title: `💬 New message from ${currentUserName || 'Connection'}`,
+          message: previewText,
+          type: 'message',
+          linkTab: 'connections',
+          linkId: msg.connectionId,
+        }).catch(() => {});
       }
     } catch {}
 

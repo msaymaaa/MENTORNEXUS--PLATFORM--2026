@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'early_career' | 'mentor' | 'admin';
+export type UserRole = 'student' | 'learner' | 'early_career' | 'mentor' | 'admin';
 
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
 
@@ -165,7 +165,7 @@ export interface AppNotification {
   userId: string;
   title: string;
   message: string;
-  type: 'request_received' | 'request_accepted' | 'request_declined' | 'message' | 'goal_milestone' | 'verification' | 'resource_published' | 'system';
+  type: 'request_received' | 'request_sent' | 'request_accepted' | 'request_declined' | 'message' | 'goal_milestone' | 'verification' | 'resource_published' | 'system';
   read: boolean;
   linkTab?: string; // e.g. 'requests', 'connections', 'goals', 'library', 'admin'
   linkId?: string;

@@ -349,10 +349,15 @@ export const ConnectionsView: React.FC = () => {
     setIsSendingMessage(true);
 
     try {
+      const peerId = selectedConnection.mentorId === currentUser?.id ? selectedConnection.studentId : selectedConnection.mentorId;
       const sent = await api.sendMessage({
         connectionId: selectedConnection.id,
         content,
         messageType: 'text',
+        senderId: currentUser?.id,
+        senderName: currentUser?.name,
+        senderAvatar: currentUser?.avatar,
+        recipientId: peerId,
         ...replyMeta,
       });
       setMessages((prev) => {
@@ -460,11 +465,16 @@ export const ConnectionsView: React.FC = () => {
           const base64Audio = reader.result as string;
           if (selectedConnection && base64Audio) {
             try {
+              const peerId = selectedConnection.mentorId === currentUser?.id ? selectedConnection.studentId : selectedConnection.mentorId;
               const sent = await api.sendMessage({
                 connectionId: selectedConnection.id,
                 content: `🎤 Voice note (${duration}s)`,
                 messageType: 'voice',
                 voiceUrl: base64Audio,
+                senderId: currentUser?.id,
+                senderName: currentUser?.name,
+                senderAvatar: currentUser?.avatar,
+                recipientId: peerId,
               });
               setMessages((prev) => {
                 if (prev.some(m => m.id === sent.id)) return prev;

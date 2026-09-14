@@ -25,6 +25,8 @@ import {
 
 const API_BASE = '/api';
 
+const localNotificationSubscribers: Array<{ userId: string; callback: (n: AppNotification) => void }> = [];
+
 export const api = {
   // Authentication token resolution from Supabase session
   async getAuthToken(): Promise<string | null> {
@@ -228,47 +230,64 @@ export const api = {
     return res.json();
   },
 
-  // Role-filtered discovery (Mentors, Learners, Early-Career, or All)
+  // Role-filtered discovery (Mentors, Learners, Rest/Others, or All Community Directory)
   async getProfilesByRole(role?: string, params?: { search?: string; industry?: string; skill?: string; minExp?: number }): Promise<UserProfile[]> {
+    let list: UserProfile[] = [];
+
     if (isSupabaseConfigured) {
-      let list = await supabaseDb.getProfilesByRole(role);
-
-      if (params?.industry && params.industry !== 'All') {
-        list = list.filter(m => m.industry.toLowerCase().includes(params.industry!.toLowerCase()));
+      list = await supabaseDb.getProfilesByRole(role);
+    } else {
+      const allUsers = await this.getAllUsers();
+      if (!role || role === 'all') {
+        list = allUsers;
+      } else if (role === 'mentor' || role === 'mentors') {
+        list = allUsers.filter(u => u.role?.toLowerCase() === 'mentor');
+      } else if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
+        list = allUsers.filter(u => u.role?.toLowerCase() === 'student' || u.role?.toLowerCase() === 'learner');
+      } else if (role === 'others' || role === 'rest' || role === 'other') {
+        list = allUsers.filter(u => {
+          const r = u.role?.toLowerCase();
+          return r !== 'mentor' && r !== 'student' && r !== 'learner';
+        });
+      } else {
+        list = allUsers.filter(u => u.role === role);
       }
-      if (params?.skill) {
-        list = list.filter(m => m.skills.some(s => s.toLowerCase().includes(params.skill!.toLowerCase())));
-      }
-      if (params?.minExp) {
-        list = list.filter(m => m.yearsOfExperience >= params.minExp!);
-      }
-      if (params?.search && params.search.trim()) {
-        const q = params.search.toLowerCase();
-        list = list.filter(m => 
-          m.name.toLowerCase().includes(q) ||
-          m.title.toLowerCase().includes(q) ||
-          m.organization.toLowerCase().includes(q) ||
-          m.bio.toLowerCase().includes(q) ||
-          m.skills.some(s => s.toLowerCase().includes(q)) ||
-          m.mentoringAreas.some(a => a.toLowerCase().includes(q)) ||
-          m.location.toLowerCase().includes(q)
-        );
-      }
-      return list;
     }
 
+    // Apply strict filtering guarantee
     if (role === 'mentor' || role === 'mentors') {
-      return this.getMentors(params);
+      list = list.filter(u => u.role?.toLowerCase() === 'mentor');
+    } else if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
+      list = list.filter(u => u.role?.toLowerCase() === 'student' || u.role?.toLowerCase() === 'learner');
+    } else if (role === 'others' || role === 'rest' || role === 'other') {
+      list = list.filter(u => {
+        const r = u.role?.toLowerCase();
+        return r !== 'mentor' && r !== 'student' && r !== 'learner';
+      });
     }
-    const allUsers = await this.getAllUsers();
-    if (!role || role === 'all') return allUsers;
-    if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
-      return allUsers.filter(u => u.role === 'student' || u.role === 'learner');
+
+    if (params?.industry && params.industry !== 'All') {
+      list = list.filter(m => m.industry.toLowerCase().includes(params.industry!.toLowerCase()));
     }
-    if (role === 'early_career' || role === 'early-career') {
-      return allUsers.filter(u => u.role === 'early_career');
+    if (params?.skill) {
+      list = list.filter(m => m.skills.some(s => s.toLowerCase().includes(params.skill!.toLowerCase())));
     }
-    return allUsers.filter(u => u.role === role);
+    if (params?.minExp) {
+      list = list.filter(m => m.yearsOfExperience >= params.minExp!);
+    }
+    if (params?.search && params.search.trim()) {
+      const q = params.search.toLowerCase();
+      list = list.filter(m => 
+        m.name.toLowerCase().includes(q) ||
+        m.title.toLowerCase().includes(q) ||
+        m.organization.toLowerCase().includes(q) ||
+        m.bio.toLowerCase().includes(q) ||
+        m.skills.some(s => s.toLowerCase().includes(q)) ||
+        m.mentoringAreas.some(a => a.toLowerCase().includes(q)) ||
+        m.location.toLowerCase().includes(q)
+      );
+    }
+    return list;
   },
 
   // Requests (from Supabase public.mentorship_requests)
@@ -297,11 +316,24 @@ export const api = {
     mentorTitle?: string;
     mentorAvatar?: string;
   }): Promise<MentorshipRequest> {
+    const user = await api.getCurrentUser().catch(() => null);
+    const enrichedPayload = {
+      ...payload,
+      requesterId: payload.requesterId || user?.id,
+      requesterName: payload.requesterName || user?.name || 'MentorNexus Member',
+      requesterTitle: payload.requesterTitle || user?.title || 'Professional',
+      requesterAvatar: payload.requesterAvatar || user?.avatar || '',
+      requesterRole: payload.requesterRole || user?.role || 'student',
+    };
+
+    let resultReq: MentorshipRequest | null = null;
+
     // 1. If Supabase is configured on client, try direct PostgREST insert
     if (isSupabaseConfigured) {
       try {
-        const supaReq = await supabaseDb.createRequest(payload);
+        const supaReq = await supabaseDb.createRequest(enrichedPayload);
         if (supaReq) {
+          resultReq = supaReq;
           // Sync notification on server
           const token = await api.getAuthToken();
           await fetch(`${API_BASE}/requests`, {
@@ -309,33 +341,59 @@ export const api = {
             headers: { 
               'Content-Type': 'application/json',
               ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-              ...(payload.requesterId ? { 'x-user-id': payload.requesterId } : {}),
+              ...(enrichedPayload.requesterId ? { 'x-user-id': enrichedPayload.requesterId } : {}),
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(enrichedPayload),
           }).catch(() => {});
-          return supaReq;
         }
       } catch (clientErr: any) {
         console.warn('Client Supabase createRequest notice (falling back to authoritative backend):', clientErr.message);
       }
     }
 
-    // 2. Authoritative backend endpoint
-    const token = await api.getAuthToken();
-    const res = await fetch(`${API_BASE}/requests`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        ...(payload.requesterId ? { 'x-user-id': payload.requesterId } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Failed to send mentorship request');
+    if (!resultReq) {
+      // 2. Authoritative backend endpoint
+      const token = await api.getAuthToken();
+      const res = await fetch(`${API_BASE}/requests`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(enrichedPayload.requesterId ? { 'x-user-id': enrichedPayload.requesterId } : {}),
+        },
+        body: JSON.stringify(enrichedPayload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to send mentorship request');
+      }
+      resultReq = await res.json();
     }
-    return res.json();
+
+    // Instantly trigger notifications for both recipient and sender confirmation
+    if (enrichedPayload.mentorId) {
+      api.createNotification({
+        userId: enrichedPayload.mentorId,
+        title: 'New Mentorship Request',
+        message: `${enrichedPayload.requesterName} sent you a mentorship request.`,
+        type: 'request_received',
+        linkTab: 'requests',
+        linkId: resultReq?.id,
+      }).catch(() => {});
+    }
+
+    if (enrichedPayload.requesterId) {
+      api.createNotification({
+        userId: enrichedPayload.requesterId,
+        title: 'Mentorship Request Submitted',
+        message: `Your mentorship request to ${enrichedPayload.mentorName || 'the recipient'} was delivered successfully.`,
+        type: 'request_sent',
+        linkTab: 'requests',
+        linkId: resultReq?.id,
+      }).catch(() => {});
+    }
+
+    return resultReq!;
   },
 
   async respondToRequest(id: string, status: 'accepted' | 'declined', responseNote?: string): Promise<MentorshipRequest> {
@@ -730,21 +788,71 @@ export const api = {
     content: string; 
     messageType?: 'text' | 'voice' | 'file'; 
     voiceUrl?: string;
+    senderId?: string;
+    senderName?: string;
+    senderAvatar?: string;
+    recipientId?: string;
     replyToId?: string;
     replyToContent?: string;
     replyToSenderName?: string;
   }): Promise<ChatMessage> {
+    const user = await api.getCurrentUser().catch(() => null);
+    const enrichedMsg = {
+      ...msg,
+      senderId: msg.senderId || user?.id,
+      senderName: msg.senderName || user?.name || 'Member',
+      senderAvatar: msg.senderAvatar || user?.avatar || '',
+    };
+
+    let resultMsg: ChatMessage | null = null;
     if (isSupabaseConfigured) {
-      const supaMsg = await supabaseDb.sendMessage(msg);
-      if (supaMsg) return supaMsg;
+      try {
+        const supaMsg = await supabaseDb.sendMessage(enrichedMsg);
+        if (supaMsg) resultMsg = supaMsg;
+      } catch (e) {
+        console.warn('Supabase sendMessage notice:', e);
+      }
     }
-    const res = await fetch(`${API_BASE}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(msg),
-    });
-    if (!res.ok) throw new Error('Failed to send message');
-    return res.json();
+
+    // Always mirror to authoritative backend for storage sync and multi-client notification dispatch
+    try {
+      const token = await api.getAuthToken();
+      const res = await fetch(`${API_BASE}/messages`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(enrichedMsg.senderId ? { 'x-user-id': enrichedMsg.senderId } : {}),
+        },
+        body: JSON.stringify(enrichedMsg),
+      });
+      if (res.ok) {
+        const serverMsg = await res.json();
+        if (!resultMsg) resultMsg = serverMsg;
+      }
+    } catch (e) {}
+
+    if (!resultMsg) {
+      throw new Error('Failed to send message');
+    }
+
+    // Instantly notify recipient if in-app
+    if (enrichedMsg.recipientId) {
+      const previewText = enrichedMsg.messageType === 'voice'
+        ? '🎤 Sent a voice note'
+        : (enrichedMsg.content.length > 60 ? `${enrichedMsg.content.slice(0, 60)}...` : enrichedMsg.content || 'New message');
+      
+      api.createNotification({
+        userId: enrichedMsg.recipientId,
+        title: `💬 New message from ${enrichedMsg.senderName}`,
+        message: previewText,
+        type: 'message',
+        linkTab: 'connections',
+        linkId: enrichedMsg.connectionId,
+      }).catch(() => {});
+    }
+
+    return resultMsg;
   },
 
   async deleteMessage(id: string): Promise<boolean> {
@@ -907,9 +1015,55 @@ export const api = {
     return { success: true };
   },
 
-  // Notifications (direct client-side Supabase JS)
+  // Notifications (authoritative backend + Supabase realtime)
   async createNotification(notif: Partial<AppNotification>): Promise<AppNotification | null> {
-    return await supabaseDb.createNotification(notif);
+    let result: AppNotification | null = null;
+    if (isSupabaseConfigured) {
+      try {
+        result = await supabaseDb.createNotification(notif);
+      } catch {}
+    }
+
+    try {
+      const token = await api.getAuthToken();
+      const res = await fetch(`${API_BASE}/notifications`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(notif),
+      });
+      if (res.ok) {
+        const serverResult = await res.json();
+        if (!result) result = serverResult;
+      }
+    } catch {}
+
+    const finalNotif: AppNotification = result || {
+      id: notif.id || `notif_${Date.now()}`,
+      userId: notif.userId || '',
+      title: notif.title || 'Notification',
+      message: notif.message || '',
+      type: notif.type || 'system',
+      read: false,
+      linkTab: notif.linkTab,
+      linkId: notif.linkId,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Instantly notify in-app subscribers in the current tab/session
+    if (finalNotif.userId) {
+      localNotificationSubscribers.forEach(sub => {
+        if (sub.userId === finalNotif.userId) {
+          try {
+            sub.callback(finalNotif);
+          } catch {}
+        }
+      });
+    }
+
+    return finalNotif;
   },
 
   async getNotifications(userId?: string): Promise<AppNotification[]> {
@@ -919,11 +1073,71 @@ export const api = {
       targetUserId = user?.id;
     }
     if (!targetUserId) return [];
-    return await supabaseDb.getNotifications(targetUserId);
+
+    let combined: AppNotification[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Fetch from authoritative server endpoint (handles storage + server Supabase)
+    try {
+      const token = await api.getAuthToken();
+      const res = await fetch(`${API_BASE}/notifications?userId=${encodeURIComponent(targetUserId)}`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          'x-user-id': targetUserId,
+        }
+      });
+      if (res.ok) {
+        const serverList = await res.json();
+        if (Array.isArray(serverList)) {
+          for (const item of serverList) {
+            if (item && item.id && !seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              combined.push(item);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Server getNotifications notice:', e);
+    }
+
+    // 2. Fetch from Supabase direct client if configured
+    if (isSupabaseConfigured) {
+      try {
+        const supaList = await supabaseDb.getNotifications(targetUserId);
+        if (Array.isArray(supaList)) {
+          for (const item of supaList) {
+            if (item && item.id && !seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              combined.push(item);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Supabase getNotifications notice:', e);
+      }
+    }
+
+    // Sort descending by date
+    combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return combined;
   },
 
   async markNotificationRead(id: string): Promise<{ success: boolean }> {
-    await supabaseDb.markNotificationRead(id);
+    if (isSupabaseConfigured) {
+      try {
+        await supabaseDb.markNotificationRead(id);
+      } catch {}
+    }
+    try {
+      const token = await api.getAuthToken();
+      await fetch(`${API_BASE}/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'PATCH',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+    } catch {}
     return { success: true };
   },
 
@@ -934,13 +1148,42 @@ export const api = {
       targetUserId = user?.id;
     }
     if (targetUserId) {
-      await supabaseDb.markAllNotificationsRead(targetUserId);
+      if (isSupabaseConfigured) {
+        try {
+          await supabaseDb.markAllNotificationsRead(targetUserId);
+        } catch {}
+      }
+      try {
+        const token = await api.getAuthToken();
+        await fetch(`${API_BASE}/notifications/read-all`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            'x-user-id': targetUserId,
+          },
+          body: JSON.stringify({ userId: targetUserId }),
+        });
+      } catch {}
     }
     return { success: true };
   },
 
   async deleteNotification(id: string): Promise<{ success: boolean }> {
-    await supabaseDb.deleteNotification(id);
+    if (isSupabaseConfigured) {
+      try {
+        await supabaseDb.deleteNotification(id);
+      } catch {}
+    }
+    try {
+      const token = await api.getAuthToken();
+      await fetch(`${API_BASE}/notifications/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+    } catch {}
     return { success: true };
   },
 
@@ -951,7 +1194,23 @@ export const api = {
       targetUserId = user?.id;
     }
     if (targetUserId) {
-      await supabaseDb.clearAllNotifications(targetUserId);
+      if (isSupabaseConfigured) {
+        try {
+          await supabaseDb.clearAllNotifications(targetUserId);
+        } catch {}
+      }
+      try {
+        const token = await api.getAuthToken();
+        await fetch(`${API_BASE}/notifications/clear-all`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            'x-user-id': targetUserId,
+          },
+          body: JSON.stringify({ userId: targetUserId }),
+        });
+      } catch {}
     }
     return { success: true };
   },
@@ -960,7 +1219,57 @@ export const api = {
     userId: string,
     onNotification: (notif: AppNotification) => void
   ): () => void {
-    return supabaseDb.subscribeToNotifications(userId, onNotification);
+    if (!userId) return () => {};
+
+    // 1. Register with local synchronous subscriber list for instant in-tab delivery
+    const subRecord = { userId, callback: onNotification };
+    localNotificationSubscribers.push(subRecord);
+
+    // 2. Realtime WebSocket subscription from Supabase if configured
+    let supaUnsub: (() => void) | null = null;
+    if (isSupabaseConfigured) {
+      try {
+        supaUnsub = supabaseDb.subscribeToNotifications(userId, (notif) => {
+          onNotification(notif);
+        });
+      } catch (err) {
+        console.warn('Realtime Supabase notifications subscription notice:', err);
+      }
+    }
+
+    // 3. High-frequency polling (1.5s) to guarantee instantaneous delivery across tabs and users
+    const knownIds = new Set<string>();
+    let hasPolledOnce = false;
+
+    // Seed known IDs
+    api.getNotifications(userId).then(notifs => {
+      notifs.forEach(n => knownIds.add(n.id));
+      hasPolledOnce = true;
+    }).catch(() => {});
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const notifs = await api.getNotifications(userId);
+        if (Array.isArray(notifs)) {
+          for (const n of notifs) {
+            if (!knownIds.has(n.id)) {
+              knownIds.add(n.id);
+              if (hasPolledOnce) {
+                onNotification(n);
+              }
+            }
+          }
+          hasPolledOnce = true;
+        }
+      } catch {}
+    }, 1500);
+
+    return () => {
+      const idx = localNotificationSubscribers.indexOf(subRecord);
+      if (idx !== -1) localNotificationSubscribers.splice(idx, 1);
+      clearInterval(pollInterval);
+      if (supaUnsub) supaUnsub();
+    };
   },
 
   // Admin

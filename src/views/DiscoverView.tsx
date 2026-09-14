@@ -37,8 +37,8 @@ export const DiscoverView: React.FC = () => {
   const [connections, setConnections] = useState<MentorshipConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Discovery Directory Category: 'all' | 'mentors' | 'learners' | 'early_career'
-  const [discoveryType, setDiscoveryType] = useState<'all' | 'mentors' | 'learners' | 'early_career'>('mentors');
+  // Discovery Directory Category: 'mentors' | 'learners' | 'others' | 'all'
+  const [discoveryType, setDiscoveryType] = useState<'mentors' | 'learners' | 'others' | 'all'>('mentors');
 
   // Search, Filters & Sorting state
   const [searchQuery, setSearchQuery] = useState('');
@@ -270,18 +270,6 @@ export const DiscoverView: React.FC = () => {
       {/* Directory Category Selector */}
       <div className="flex flex-wrap items-center gap-2 p-1.5 bg-[#12141F] border border-[#262A3C] rounded-2xl w-fit">
         <button
-          onClick={() => setDiscoveryType('all')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
-            discoveryType === 'all'
-              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
-              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
-          }`}
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>All Community</span>
-        </button>
-
-        <button
           onClick={() => setDiscoveryType('mentors')}
           className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
             discoveryType === 'mentors'
@@ -290,7 +278,7 @@ export const DiscoverView: React.FC = () => {
           }`}
         >
           <Award className="w-3.5 h-3.5" />
-          <span>Mentors & Practitioners</span>
+          <span>Mentors</span>
         </button>
 
         <button
@@ -302,19 +290,31 @@ export const DiscoverView: React.FC = () => {
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5" />
-          <span>Learners & Mentees</span>
+          <span>Learners</span>
         </button>
 
         <button
-          onClick={() => setDiscoveryType('early_career')}
+          onClick={() => setDiscoveryType('others')}
           className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
-            discoveryType === 'early_career'
+            discoveryType === 'others'
               ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
               : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
           }`}
         >
           <Briefcase className="w-3.5 h-3.5" />
-          <span>Early Career</span>
+          <span>Rest / Others</span>
+        </button>
+
+        <button
+          onClick={() => setDiscoveryType('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+            discoveryType === 'all'
+              ? 'bg-[#D4AF37] text-[#090A0F] font-bold shadow-md shadow-[#D4AF37]/10'
+              : 'text-[#9E9A90] hover:text-[#F5F2EB] hover:bg-[#181C2C]'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>All Community Directory</span>
         </button>
       </div>
 
@@ -683,9 +683,14 @@ export const DiscoverView: React.FC = () => {
           <div className="w-12 h-12 rounded-xl bg-[#1A1D2C] text-[#D4AF37] flex items-center justify-center mx-auto">
             <Search className="w-6 h-6" />
           </div>
-          <h3 className="text-lg font-serif font-bold text-[#F5F2EB]">No mentors match your search yet.</h3>
+          <h3 className="text-lg font-serif font-bold text-[#F5F2EB]">
+            {discoveryType === 'mentors' && 'No mentors match your search yet.'}
+            {discoveryType === 'learners' && 'No learners match your search yet.'}
+            {discoveryType === 'others' && 'No members match your search in Rest / Others yet.'}
+            {discoveryType === 'all' && 'No community members match your search yet.'}
+          </h3>
           <p className="text-xs text-[#9E9A90] leading-relaxed">
-            Try adjusting your search keywords or broadening your industry filters.
+            Try adjusting your search keywords or broadening your industry and skills filters.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button

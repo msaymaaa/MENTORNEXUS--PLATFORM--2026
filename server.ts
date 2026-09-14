@@ -245,18 +245,38 @@ async function startServer() {
   });
 
   app.get('/api/auth/users', async (req, res) => {
+    const { role } = req.query;
     const client = getServerSupabaseClient();
+    let users: UserProfile[] = [];
     if (client) {
       try {
-        const { data, error } = await client.from('profiles').select('*');
+        let query = client.from('profiles').select('*');
+        if (role === 'mentor' || role === 'mentors') {
+          query = query.eq('role', 'mentor');
+        } else if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
+          query = query.or('role.eq.student,role.eq.learner');
+        } else if (role === 'others' || role === 'rest' || role === 'other') {
+          query = query.not('role', 'in', '("mentor","student","learner")');
+        }
+        const { data, error } = await query;
         if (!error && data && data.length > 0) {
-          return res.json(data.map(mapServerProfile));
+          users = data.map(mapServerProfile);
         }
       } catch (e) {
         console.warn('Supabase get users query:', e);
       }
     }
-    res.json(db.getUsers());
+    if (users.length === 0) {
+      users = db.getUsers();
+      if (role === 'mentor' || role === 'mentors') {
+        users = users.filter(u => (u.role as string) === 'mentor');
+      } else if (role === 'learner' || role === 'learners' || role === 'student' || role === 'students') {
+        users = users.filter(u => (u.role as string) === 'student' || (u.role as string) === 'learner');
+      } else if (role === 'others' || role === 'rest' || role === 'other') {
+        users = users.filter(u => (u.role as string) !== 'mentor' && (u.role as string) !== 'student' && (u.role as string) !== 'learner');
+      }
+    }
+    res.json(users);
   });
 
   app.post('/api/auth/register', async (req, res) => {
@@ -286,13 +306,14 @@ async function startServer() {
     let role: UserRole = 'student';
     if (requestedRole === 'mentor') role = 'mentor';
     else if (requestedRole === 'early_career') role = 'early_career';
-    else if (requestedRole === 'student') role = 'student';
+    else if (requestedRole === 'learner' || requestedRole === 'student') role = 'student';
     else {
       role = 'student';
     }
 
     const defaultAvatars: Record<UserRole, string> = {
       student: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+      learner: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
       early_career: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
       mentor: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
       admin: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&auto=format&fit=crop&q=80',
@@ -407,7 +428,7 @@ async function startServer() {
     const client = getServerSupabaseClient();
     if (client) {
       try {
-        const { data, error } = await client.from('profiles').select('*').or('role.eq.mentor,is_mentor.eq.true');
+        const { data, error } = await client.from('profiles').select('*').eq('role', 'mentor');
         if (!error && data && data.length > 0) {
           let mentors = data.map(mapServerProfile);
           if (verifiedOnly === 'true') {
@@ -658,16 +679,30 @@ async function startServer() {
         }
 
         if (!supaErr && supaData) {
-          // Dispatch notification to mentor
+          // Dispatch notification to recipient and requester confirmation
           try {
-            await client.from('notifications').insert({
-              user_id: mentorId,
-              title: 'New Mentorship Request',
-              message: `${requester.name} sent you a mentorship request.`,
-              type: 'request_received',
-              is_read: false,
-              created_at: new Date().toISOString(),
-            });
+            await client.from('notifications').insert([
+              {
+                user_id: mentorId,
+                title: 'New Mentorship Request',
+                message: `${requester.name} sent you a mentorship request.`,
+                type: 'request_received',
+                link_tab: 'requests',
+                link_id: String(supaData.id),
+                is_read: false,
+                created_at: new Date().toISOString(),
+              },
+              {
+                user_id: resolvedId,
+                title: 'Mentorship Request Submitted',
+                message: `Your mentorship request to ${mentor?.name || 'the recipient'} was delivered successfully.`,
+                type: 'request_sent',
+                link_tab: 'requests',
+                link_id: String(supaData.id),
+                is_read: false,
+                created_at: new Date().toISOString(),
+              }
+            ]);
           } catch {}
 
           const createdResponse = {
@@ -1214,7 +1249,7 @@ async function startServer() {
   });
 
   app.post('/api/messages', async (req, res) => {
-    const { connectionId, content, messageType, voiceUrl, senderId, senderName, senderAvatar, replyToId, replyToContent, replyToSenderName } = req.body;
+    const { connectionId, content, messageType, voiceUrl, senderId, senderName, senderAvatar, recipientId: explicitRecipientId, replyToId, replyToContent, replyToSenderName } = req.body;
     if (!connectionId) {
       return res.status(400).json({ error: 'connectionId is required' });
     }
@@ -1290,12 +1325,18 @@ async function startServer() {
 
     // Dispatch real-time in-app notification to the other connection member
     try {
-      let recipientId: string | null = null;
+      let recipientId: string | null = explicitRecipientId || null;
       let targetConnectionName = resolvedName || 'Connection';
 
       const conn = db.getConnectionById(connectionId);
       if (conn) {
-        recipientId = conn.studentId === callerId ? conn.mentorId : conn.studentId;
+        if (!recipientId) {
+          recipientId = conn.studentId === callerId ? conn.mentorId : conn.studentId;
+        }
+        if (!resolvedName) {
+          if (recipientId === conn.studentId) targetConnectionName = conn.mentorName || 'Your Mentor';
+          else if (recipientId === conn.mentorId) targetConnectionName = conn.studentName || 'Your Mentee';
+        }
       }
 
       if (!recipientId && client) {
@@ -1303,7 +1344,7 @@ async function startServer() {
         const isConnPrefix = connectionId.startsWith('conn_');
         const rawReqId = isConnPrefix ? connectionId.replace('conn_', '') : connectionId;
 
-        const { data: sConn } = await client.from('connections').select('*').eq(isConnPrefix ? 'request_id' : 'id', rawReqId).maybeSingle();
+        const { data: sConn } = await client.from('connections').select('*').or(`id.eq.${connectionId},id.eq.${rawReqId},request_id.eq.${rawReqId}`).maybeSingle();
         if (sConn) {
           const sStudent = sConn.student_id || sConn.requester_id || sConn.user_id;
           const sMentor = sConn.mentor_id || sConn.connected_user_id;

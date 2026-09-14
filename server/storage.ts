@@ -235,21 +235,31 @@ class StorageEngine {
     return this.data.requests.find(r => r.id === id);
   }
 
-  createRequest(request: Omit<MentorshipRequest, 'id' | 'createdAt' | 'updatedAt'>): MentorshipRequest {
+  createRequest(request: Omit<MentorshipRequest, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): MentorshipRequest {
     const newReq: MentorshipRequest = {
       ...request,
-      id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      id: request.id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: (request as any).createdAt || new Date().toISOString(),
+      updatedAt: (request as any).updatedAt || new Date().toISOString(),
     };
     this.data.requests.unshift(newReq);
 
-    // Automatically trigger notification for mentor
+    // Automatically trigger notification for recipient
     this.createNotification({
       userId: newReq.mentorId,
       title: 'New Mentorship Request',
       message: `${newReq.requesterName} sent you a mentorship request.`,
       type: 'request_received',
+      linkTab: 'requests',
+      linkId: newReq.id,
+    });
+
+    // Automatically trigger notification for sender confirmation
+    this.createNotification({
+      userId: newReq.requesterId,
+      title: 'Mentorship Request Submitted',
+      message: `Your mentorship request to ${newReq.mentorName || 'the recipient'} was delivered successfully.`,
+      type: 'request_sent',
       linkTab: 'requests',
       linkId: newReq.id,
     });
