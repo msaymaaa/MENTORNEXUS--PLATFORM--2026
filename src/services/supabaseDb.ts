@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
+import { localStore } from './localStore';
 import { 
   UserProfile, 
   MentorshipRequest, 
@@ -377,55 +378,80 @@ export function mapNotificationFromSupabase(row: any): AppNotification {
 export const supabaseDb = {
   // PROFILES
   async getProfiles(): Promise<UserProfile[]> {
-    if (!isSupabaseConfigured) return [];
-    const client = getSupabaseClient();
-    if (!client) return [];
-
-    const { data, error } = await client.from('profiles').select('*');
-    if (error) {
-      console.warn('Supabase getProfiles notice:', error.message);
-      return [];
+    if (!isSupabaseConfigured) {
+      return localStore.getUsers();
     }
-    return (data || []).map(row => mapProfileFromSupabase(row));
+    const client = getSupabaseClient();
+    if (!client) return localStore.getUsers();
+
+    try {
+      const { data, error } = await client.from('profiles').select('*');
+      if (error || !data || data.length === 0) {
+        return localStore.getUsers();
+      }
+      const loaded = data.map(row => mapProfileFromSupabase(row));
+      loaded.forEach(p => localStore.upsertUser(p));
+      return loaded;
+    } catch (err: any) {
+      console.warn('Supabase getProfiles notice:', err?.message);
+      return localStore.getUsers();
+    }
   },
 
   async getProfileById(id: string, fallbackEmail?: string): Promise<UserProfile | null> {
-    if (!isSupabaseConfigured || !id) return null;
+    if (!id) return null;
+    if (!isSupabaseConfigured) {
+      return localStore.getUserById(id);
+    }
     const client = getSupabaseClient();
-    if (!client) return null;
+    if (!client) return localStore.getUserById(id);
 
     try {
       const { data, error } = await client.from('profiles').select('*').eq('id', id).maybeSingle();
-      if (error) {
-        console.warn('Supabase getProfileById notice:', error.message);
-        return null;
+      if (error || !data) {
+        return localStore.getUserById(id);
       }
-      return data ? mapProfileFromSupabase(data, fallbackEmail) : null;
+      return mapProfileFromSupabase(data, fallbackEmail);
     } catch (err) {
-      console.warn('Supabase getProfileById error:', err);
-      return null;
+      return localStore.getUserById(id);
     }
   },
 
   async getProfileByEmail(email: string): Promise<UserProfile | null> {
-    if (!isSupabaseConfigured || !email) return null;
+    if (!email) return null;
+    if (!isSupabaseConfigured) {
+      const all = localStore.getUsers();
+      return all.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
+    }
     const client = getSupabaseClient();
-    if (!client) return null;
+    if (!client) {
+      const all = localStore.getUsers();
+      return all.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
+    }
 
     try {
       const { data, error } = await client.from('profiles').select('*').limit(100);
-      if (error || !data) return null;
+      if (error || !data) {
+        const all = localStore.getUsers();
+        return all.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
+      }
       const match = data.find((r: any) => r.email && r.email.toLowerCase() === email.trim().toLowerCase());
       return match ? mapProfileFromSupabase(match, email) : null;
     } catch {
-      return null;
+      const all = localStore.getUsers();
+      return all.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
     }
   },
 
   async upsertProfile(profile: Partial<UserProfile>): Promise<UserProfile | null> {
-    if (!isSupabaseConfigured) return null;
+    if (!profile.id) return null;
+    localStore.upsertUser(profile as any);
+
+    if (!isSupabaseConfigured) {
+      return localStore.getUserById(profile.id);
+    }
     const client = getSupabaseClient();
-    if (!client) return null;
+    if (!client) return localStore.getUserById(profile.id);
 
     const payload = mapProfileToSupabase(profile);
     if (!payload.id) return null;
@@ -1104,16 +1130,16 @@ export const supabaseDb = {
       // Non-blocking enrichment
     }
 
-    // 4. Merge server connections for meetings and local notes
+    // 4. Merge local connections for meetings and offline notes
     try {
-      const serverRes = await fetch(`/api/connections?userId=${encodeURIComponent(userId)}`).then(r => r.ok ? r.json() : []).catch(() => []);
-      if (Array.isArray(serverRes) && serverRes.length > 0) {
-        const serverMap = new Map(serverRes.map(sc => [sc.id, sc]));
+      const localConns = localStore.getConnections(userId);
+      if (Array.isArray(localConns) && localConns.length > 0) {
+        const localMap = new Map(localConns.map(sc => [sc.id, sc]));
         for (const conn of connectionList) {
-          const sc = serverMap.get(conn.id) || 
-                     serverMap.get(`conn_${conn.requestId}`) || 
-                     serverMap.get(conn.requestId || '') ||
-                     serverRes.find(s => 
+          const sc = localMap.get(conn.id) || 
+                     localMap.get(`conn_${conn.requestId}`) || 
+                     localMap.get(conn.requestId || '') ||
+                     localConns.find(s => 
                        (s.studentId === conn.studentId && s.mentorId === conn.mentorId) ||
                        (s.studentId === conn.mentorId && s.mentorId === conn.studentId)
                      );
@@ -1142,7 +1168,7 @@ export const supabaseDb = {
             }
           }
         }
-        for (const sc of serverRes) {
+        for (const sc of localConns) {
           const pairKey = [sc.studentId, sc.mentorId].sort().join(':');
           if (!seenPairs.has(pairKey) && (sc.studentId === userId || sc.mentorId === userId)) {
             seenPairs.add(pairKey);
@@ -1268,15 +1294,6 @@ export const supabaseDb = {
       console.warn('Supabase updateConnection notice:', err?.message);
     }
 
-    // Also sync to server store
-    try {
-      await fetch(`/api/connections/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-    } catch {}
-
     if (updatedData) {
       const mapped = mapConnectionFromSupabase(updatedData);
       if (updates.meetings !== undefined) {
@@ -1284,10 +1301,11 @@ export const supabaseDb = {
       } else if (!mapped.meetings || mapped.meetings.length === 0) {
         mapped.meetings = getCachedMeetings(id) || [];
       }
+      localStore.saveConnection(mapped);
       return mapped;
     }
 
-    return {
+    const fallbackConn: MentorshipConnection = {
       id,
       requestId: rawReqId || id,
       studentId: updates.studentId || '',
@@ -1304,7 +1322,11 @@ export const supabaseDb = {
       meetings: updates.meetings !== undefined ? updates.meetings : (getCachedMeetings(id) || []),
       lastMeetingDate: updates.lastMeetingDate,
       nextMeetingDate: updates.nextMeetingDate,
+      connectedAt: updates.connectedAt || new Date().toISOString(),
+      lastInteractionAt: new Date().toISOString(),
     };
+    localStore.saveConnection(fallbackConn);
+    return fallbackConn;
   },
 
   async getConnectionById(id: string): Promise<MentorshipConnection | null> {
@@ -1396,35 +1418,30 @@ export const supabaseDb = {
       // Non-blocking
     }
 
-    // 2. Fetch/merge from persistent server store
+    // 2. Fetch/merge from local store cache
     try {
-      const res = await fetch(`/api/messages?connectionId=${encodeURIComponent(connectionId)}`);
-      if (res.ok) {
-        const serverMsgs = await res.json();
-        if (Array.isArray(serverMsgs) && serverMsgs.length > 0) {
-          const existingIds = new Set(messages.map(m => m.id));
-          for (const sm of serverMsgs) {
-            const mappedId = String(sm.id);
-            if (!existingIds.has(mappedId)) {
-              existingIds.add(mappedId);
-              messages.push({
-                id: mappedId,
-                connectionId: sm.connectionId || sm.connection_id || connectionId,
-                senderId: sm.senderId || sm.sender_id || '',
-                senderName: sm.senderName || sm.sender_name || 'Member',
-                senderAvatar: sm.senderAvatar || sm.sender_avatar,
-                content: sm.content || '',
-                messageType: sm.messageType || sm.message_type || 'text',
-                voiceUrl: sm.voiceUrl || sm.voice_url,
-                createdAt: sm.createdAt || sm.created_at || new Date().toISOString(),
-              });
-            }
+      const localMsgs = localStore.getMessages(connectionId);
+      if (Array.isArray(localMsgs) && localMsgs.length > 0) {
+        const existingIds = new Set(messages.map(m => m.id));
+        for (const sm of localMsgs) {
+          const mappedId = String(sm.id);
+          if (!existingIds.has(mappedId)) {
+            existingIds.add(mappedId);
+            messages.push({
+              id: mappedId,
+              connectionId: sm.connectionId || connectionId,
+              senderId: sm.senderId || '',
+              senderName: sm.senderName || 'Member',
+              senderAvatar: sm.senderAvatar,
+              content: sm.content || '',
+              messageType: sm.messageType || 'text',
+              voiceUrl: sm.voiceUrl,
+              createdAt: sm.createdAt || new Date().toISOString(),
+            });
           }
         }
       }
-    } catch {
-      // Fallback
-    }
+    } catch {}
 
     // Sort chronologically
     messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -1537,53 +1554,25 @@ export const supabaseDb = {
       // Proceed to server persistence
     }
 
-    // 2. Persist to server /api/messages for guaranteed durable cross-device storage
-    try {
-      const res = await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionId: msg.connectionId,
-          senderId: currentUserId,
-          senderName: currentUserName,
-          senderAvatar: currentUserAvatar,
-          content: serializedContent,
-          messageType: msg.messageType || 'text',
-          voiceUrl: msg.voiceUrl,
-          replyToId: msg.replyToId,
-          replyToContent: msg.replyToContent,
-          replyToSenderName: msg.replyToSenderName,
-        }),
-      });
-
-      if (res.ok) {
-        const serverMsg = await res.json();
-        if (!createdMessage && serverMsg) {
-          createdMessage = {
-            id: String(serverMsg.id),
-            connectionId: serverMsg.connectionId || msg.connectionId,
-            senderId: serverMsg.senderId || currentUserId,
-            senderName: serverMsg.senderName || currentUserName || 'Member',
-            senderAvatar: serverMsg.senderAvatar || currentUserAvatar,
-            content: msg.content || serverMsg.content,
-            messageType: serverMsg.messageType || 'text',
-            voiceUrl: serverMsg.voiceUrl,
-            replyToId: msg.replyToId || serverMsg.replyToId,
-            replyToContent: msg.replyToContent || serverMsg.replyToContent,
-            replyToSenderName: msg.replyToSenderName || serverMsg.replyToSenderName,
-            createdAt: serverMsg.createdAt || new Date().toISOString(),
-          };
-        }
-      }
-    } catch (err: any) {
-      if (!createdMessage) {
-        throw new Error(err.message || 'Failed to persist message');
-      }
-    }
-
+    // 2. Persist to local store for offline cache and immediate UI responsiveness
     if (!createdMessage) {
-      throw new Error('Message could not be persisted');
+      createdMessage = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        connectionId: msg.connectionId,
+        senderId: currentUserId,
+        senderName: currentUserName || 'Member',
+        senderAvatar: currentUserAvatar,
+        content: msg.content || '',
+        messageType: msg.messageType || 'text',
+        voiceUrl: msg.voiceUrl,
+        replyToId: msg.replyToId,
+        replyToContent: msg.replyToContent,
+        replyToSenderName: msg.replyToSenderName,
+        createdAt: new Date().toISOString(),
+      };
     }
+
+    localStore.saveMessage(msg.connectionId, createdMessage);
 
     // Update connection last_activity in Supabase if supported
     try {
@@ -1627,9 +1616,6 @@ export const supabaseDb = {
         }
       }
     }
-    try {
-      await fetch(`/api/messages/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    } catch {}
     return true;
   },
 
@@ -1684,48 +1670,32 @@ export const supabaseDb = {
 
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/messages?connectionId=${encodeURIComponent(connectionId)}`);
-        if (res.ok) {
-          const msgs = await res.json();
-          if (Array.isArray(msgs)) {
-            const currentIds = new Set(msgs.map(m => String(m.id)));
+        const msgs = await this.getMessages(connectionId);
+        if (Array.isArray(msgs)) {
+          const currentIds = new Set(msgs.map(m => String(m.id)));
 
-            if (hasPolledOnce && onDelete) {
-              for (const prevId of Array.from(knownMessageIds)) {
-                if (!currentIds.has(prevId)) {
-                  onDelete(prevId);
-                  knownMessageIds.delete(prevId);
-                }
+          if (hasPolledOnce && onDelete) {
+            for (const prevId of Array.from(knownMessageIds)) {
+              if (!currentIds.has(prevId)) {
+                onDelete(prevId);
+                knownMessageIds.delete(prevId);
               }
             }
-
-            for (const sm of msgs) {
-              const smId = String(sm.id);
-              if (!knownMessageIds.has(smId)) {
-                knownMessageIds.add(smId);
-                if (hasPolledOnce) {
-                  onMessage({
-                    id: smId,
-                    connectionId: sm.connectionId || connectionId,
-                    senderId: sm.senderId || '',
-                    senderName: sm.senderName || '',
-                    senderAvatar: sm.senderAvatar,
-                    content: sm.content || '',
-                    messageType: sm.messageType || 'text',
-                    voiceUrl: sm.voiceUrl,
-                    replyToId: sm.replyToId,
-                    replyToContent: sm.replyToContent,
-                    replyToSenderName: sm.replyToSenderName,
-                    createdAt: sm.createdAt || new Date().toISOString(),
-                  });
-                }
-              }
-            }
-            hasPolledOnce = true;
           }
+
+          for (const sm of msgs) {
+            const smId = String(sm.id);
+            if (!knownMessageIds.has(smId)) {
+              knownMessageIds.add(smId);
+              if (hasPolledOnce) {
+                onMessage(sm);
+              }
+            }
+          }
+          hasPolledOnce = true;
         }
       } catch {}
-    }, 2000);
+    }, 2500);
 
     return () => {
       clearInterval(pollInterval);
@@ -2245,13 +2215,10 @@ export const supabaseDb = {
       }
     }
 
-    try {
-      const queryParams = new URLSearchParams();
-      if (peerUserId) queryParams.set('peerUserId', peerUserId);
-      if (currentUserId) queryParams.set('currentUserId', currentUserId);
-      const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
-      await fetch(`/api/connections/${encodeURIComponent(id)}${qs}`, { method: 'DELETE' });
-    } catch {}
+    localStore.deleteConnection(id);
+    if (rawReqId) localStore.deleteConnection(rawReqId);
+    localStore.clearMessages(id);
+    if (rawReqId) localStore.clearMessages(rawReqId);
 
     return true;
   },
@@ -2279,37 +2246,20 @@ export const supabaseDb = {
       }
     }
 
-    try {
-      await fetch(`/api/users/${encodeURIComponent(targetUserId)}/block`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-    } catch {}
-
+    localStore.blockUser(userId, targetUserId);
     return true;
   },
 
   async unblockUser(userId: string, targetUserId: string): Promise<boolean> {
-    try {
-      await fetch(`/api/users/${encodeURIComponent(targetUserId)}/unblock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-    } catch {}
-
+    localStore.unblockUser(userId, targetUserId);
     return true;
   },
 
   async getBlockedUsers(userId: string): Promise<UserProfile[]> {
-    try {
-      const res = await fetch(`/api/users/${encodeURIComponent(userId)}/blocked`);
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {}
-    return [];
+    const blockedIds = localStore.getBlockedUsers(userId);
+    if (!blockedIds || blockedIds.length === 0) return [];
+    const profiles = await this.getProfiles();
+    return profiles.filter(p => blockedIds.includes(p.id));
   },
 
   async deleteMessagesForConnection(connectionId: string): Promise<boolean> {
@@ -2326,9 +2276,8 @@ export const supabaseDb = {
       }
     }
 
-    try {
-      await fetch(`/api/connections/${encodeURIComponent(connectionId)}/chat`, { method: 'DELETE' });
-    } catch {}
+    localStore.clearMessages(connectionId);
+    if (rawId) localStore.clearMessages(rawId);
 
     return true;
   },
